@@ -184,9 +184,9 @@ export default function LifeTimelinePage(): JSX.Element {
         ))}
       </div>
 
-      {/* Main Grid: Left Detailed Timeline, Right Summaries */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-        {/* Left Column: Detailed Timeline Ledger */}
+      {/* Main Column Stack: Detailed Timeline Ledger & Milestones */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Detailed Timeline Ledger */}
         <div className="ll-card">
           <h3 className="ll-section-title" style={{ marginBottom: 14 }}>
             <span className="ll-section-icon">📜</span> Detailed Timeline

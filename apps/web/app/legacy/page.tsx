@@ -4,7 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useLife } from '../../components/LifeContext';
-import { formatLocationFull, getCurrencyForLocation } from '../../lib/era';
+import {
+  formatLocationFull,
+  getCurrencyForLocation,
+  getFamilyKinshipProfile,
+  isVictorianLocation,
+} from '../../lib/era';
 
 function formatLocation(id: string): string {
   return id
@@ -36,6 +41,11 @@ export default function LegacyPage(): JSX.Element {
   const currentYear = view ? parseInt(view.date.slice(0, 4), 10) : 1946;
   const birthYear = currentYear - age;
   const wealth = player?.wealth ?? 0;
+  const isVictorian = isVictorianLocation(player?.locationId);
+  const playerSurname =
+    player?.name?.split(' ').slice(1).join(' ') ||
+    (isVictorian ? 'Pendelton' : 'Sharma');
+  const kinship = getFamilyKinshipProfile(player?.locationId, playerSurname);
 
   const occupation = player?.occupationId
     ? player.occupationId.replace(/^occupation\./, '').replace(/_/g, ' ')
@@ -196,15 +206,15 @@ export default function LegacyPage(): JSX.Element {
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, fontSize: '0.85rem' }}>
-                  <span>👨🏻‍🦳 Ram Prasad (Father)</span>
+                  <span>👨🏻‍🦳 {kinship.fatherName} (Father)</span>
                   <span className="ll-pill gold">Household Head</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, fontSize: '0.85rem' }}>
-                  <span>👩🏻 Sita Devi (Mother)</span>
+                  <span>👩🏻 {kinship.motherName} (Mother)</span>
                   <span className="ll-pill neutral">Caregiver</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, fontSize: '0.85rem' }}>
-                  <span>👦🏻 Mohan Prasad (Elder Brother)</span>
+                  <span>👦🏻 {kinship.brotherName} (Elder Brother)</span>
                   <span className="ll-pill neutral">Senior Heir</span>
                 </div>
               </div>
@@ -226,15 +236,15 @@ export default function LegacyPage(): JSX.Element {
               <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', lineHeight: 1.5, marginBottom: 12 }}>
                 Based on your life stage and choices to date, this is how history perceives your early path:
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                <div className="ll-card" style={{ padding: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="ll-card" style={{ padding: 12, background: 'var(--bg-secondary)' }}>
                   <span style={{ fontSize: '1.4rem' }}>📖</span>
                   <div style={{ fontWeight: 600, color: 'var(--cream)', marginTop: 4 }}>Scholastic Promise</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>
                     {player?.educationYears ? `${player.educationYears} years completed` : 'Early childhood nurturing'}
                   </div>
                 </div>
-                <div className="ll-card" style={{ padding: 12 }}>
+                <div className="ll-card" style={{ padding: 12, background: 'var(--bg-secondary)' }}>
                   <span style={{ fontSize: '1.4rem' }}>🤝</span>
                   <div style={{ fontWeight: 600, color: 'var(--cream)', marginTop: 4 }}>Kinship Loyalty</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>
@@ -276,9 +286,9 @@ export default function LegacyPage(): JSX.Element {
                 <button
                   type="button"
                   className="ll-btn-outline"
-                  onClick={() => handleWillAction('✓ Designated elder brother Mohan Prasad as future family guardian.')}
+                  onClick={() => handleWillAction(`✓ Designated elder brother ${kinship.brotherName} as future family guardian.`)}
                 >
-                  Designate Primary Heir: Mohan Prasad
+                  Designate Primary Heir: {kinship.brotherName}
                 </button>
                 <button
                   type="button"

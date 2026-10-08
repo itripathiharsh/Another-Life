@@ -100,9 +100,9 @@ export default function WorldPage(): JSX.Element {
       ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* City Profile & Cartography Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* City Profile & Cartography Column Stack */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* City Profile Card */}
         <div className="ll-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -209,8 +209,8 @@ export default function WorldPage(): JSX.Element {
         </div>
       </div>
 
-      {/* Global Events & World Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+      {/* Global Events & World Stats Column Stack */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* Global Events Feed */}
         <div className="ll-card">
           <div className="ll-section-head">

@@ -461,7 +461,7 @@ export default function HomePage(): JSX.Element {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '4px 0 12px' }}>
               Select the historical epoch and civilization for your journey:
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div
                 className={`ll-card ${selectedEraId === 'india' ? 'll-card-gold' : ''}`}
                 style={{

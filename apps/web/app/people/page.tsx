@@ -601,11 +601,11 @@ export default function PeoplePage(): JSX.Element {
           <div
             className="ll-card"
             style={{
-              maxWidth: 480,
+              maxWidth: 'min(420px, calc(100vw - 24px))',
               width: '100%',
-              maxHeight: '90vh',
+              maxHeight: '85dvh',
               overflowY: 'auto',
-              padding: 20,
+              padding: 16,
             }}
             onClick={(e) => e.stopPropagation()}
           >

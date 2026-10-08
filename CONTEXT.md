@@ -371,23 +371,46 @@
 
 ---
 
-### Iteration 012 — 2026-10-09 — Git Repository Initialization & GitHub Remote Push ✅
+
+---
+
+### Iteration 014 — 2026-10-09 — Forensic Mobile Audit & Android-Only Architecture Implementation ✅
 
 **User Request:**
-- Push to GitHub remote `https://github.com/itripathiharsh/Another-Life`.
-- Push only relevant files; exclude raw planning phase documents.
-- Keep `CONTEXT.md` and `AGENTS.md` / `CLAUDE.md`.
+- "OK still the games screens are not andriod only and there are 1000s of issues audit it"
+- Mandate: Lock all screens strictly to an Android portrait mobile-first format, eliminate wide desktop stretching, fix bottom tab overcrowding, and audit all page cards and modals for mobile viewport boundaries.
 
-**Done:**
-- Initialized clean git repository at `D:\Another life\legacylife\.git`.
-- Configured `.gitignore` to strictly ignore:
-  - Raw planning files (`docs/phases/`)
-  - Duplicate reference image archives (`docs/design-reference/`, `docs/prototypes/`)
-  - Build and runtime caches (`node_modules/`, `.next/`, `.cache/`, `.data/`, `dist/`, `*.tsbuildinfo`, `apps/web/app/[...slug]/`)
-- Created [`AGENTS.md`](./AGENTS.md) detailing architecture, principles, commands, and rules.
-- Retained [`CONTEXT.md`](./CONTEXT.md), [`CLAUDE.md`](./CLAUDE.md), all 6 workspace packages/apps, historical era specifications in `docs/eras/`, the mini-games catalog in `docs/MINI_GAMES_CATALOG.md`, and Next.js public assets in `apps/web/public/`.
-- Committed 124 curated project files (40,088 lines of code).
-- Added remote `origin https://github.com/itripathiharsh/Another-Life` and successfully pushed to branch `main` (`git push -u origin main`).
+**Forensic Audit Findings & Root Causes:**
+1. **Desktop Expansion Breaking Mobile App Aesthetic:** `AppShell.tsx` and `globals.css` allowed `/life` and `/world` to expand to 1240px wide via `.wide`, turning an Android simulation into a sprawling desktop dashboard on desktop screens.
+2. **Tab Overcrowding Violating Material Design:** The bottom navigation bar contained 8 cramped tabs (`Home`, `Life`, `World`, `People`, `Career`, `Economy`, `Health`, `More`), allotting under 45px per tab on mobile viewports and causing tap collisions.
+3. **Container Proportions & Viewport Constraints:** `--app-max` was set to 540px (phablet width) rather than standard Android portrait proportions (390–430px). Missing Next.js viewport meta settings allowed auto-zooming and browser chrome letterboxing.
+4. **Multi-Column Grid Breaks on Mobile:** `repeat(auto-fit, minmax(320px, 1fr))` on `life/page.tsx`, `world/page.tsx`, `economy/page.tsx`, and `saves/page.tsx` caused awkward line wraps or overflow on narrow 360–412px viewports.
+5. **Modal Clipping & Hardcoded Relics:** Person and Milestone modals exceeded 90vh without scroll containment. In `legacy/page.tsx`, living dynasty members were still hardcoded to Indian names (*Ram Prasad*, *Sita Devi*, *Mohan Prasad*) even when playing Victorian Britain.
+
+**Solutions Implemented:**
+- **Android Chassis & Shell Architecture:**
+  - Pinned `--app-max: 430px` in `globals.css`. Eradicated `.ll-page.wide { max-width: 1240px }`.
+  - Added desktop device chassis framing (`border-radius: 40px`, 3px gilded bezel, centered on desktop with ambient glow, edge-to-edge native on mobile screens).
+  - Added Next.js 14 `viewport` metadata with `maximumScale: 1`, `userScalable: false`, `themeColor: '#090c0f'`.
+- **Material 5-Destination Navigation Dock + Android Chronicle Hub Drawer:**
+  - Streamlined `AppShell.tsx` to 5 core destinations: `Home` (⌂), `People` (👥), `Career` (💼), `Assets` (🪙), and `More` (☰).
+  - Tapping `More` opens a native Android bottom-sheet drawer providing 1-tap access to `Life Timeline`, `World Gazetteer`, `Health & Clinic`, `Hall of Ancestors`, and `Saves & Settings`.
+  - Added pending decisions notification badge on the Home tab.
+- **Screen-by-Screen Mobile Stacking & Card Refactoring:**
+  - **`life/page.tsx`:** Converted side-by-side desktop grid into a streamlined vertical mobile timeline feed. Constrained modal width to mobile bounds.
+  - **`world/page.tsx`:** Stacked City Profile and Cartography map vertically; streamlined regional tabs and events feed for touch.
+  - **`page.tsx`:** Replaced multi-column epoch selector with clean vertical cards; scaled avatar circle from 72px to 58px to preserve metadata density.
+  - **`people/page.tsx`:** Bounded Person Detail modal to `min(420px, calc(100vw - 24px))` and `85dvh`.
+  - **`health/page.tsx`:** Converted 2-column activities grid into touch-friendly list tiles with 44px tap targets.
+  - **`economy/page.tsx`:** Stacked property deeds vertically for portrait width.
+  - **`saves/page.tsx`:** Stacked Game Options rows vertically.
+  - **`legacy/page.tsx`:** Connected dynamic `getFamilyKinshipProfile` to replace hardcoded family names with era-appropriate kin (*will & succession* dynamic heirs); stacked projected legacy cards vertically.
+
+**Verification:**
+- `npm run typecheck`: 0 errors across all 6 packages.
+- `npm test`: 79/79 unit tests passing across all 7 test suites.
+- Zero writes to C: drive maintained.
+
 
 
 

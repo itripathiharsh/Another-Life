@@ -228,7 +228,7 @@ export default function HealthPage(): JSX.Element {
           <span className="ll-section-icon">🧘</span> Choose an Activity
         </h3>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {activities.map((act) => (
             <div
               key={act.id}
@@ -236,22 +236,28 @@ export default function HealthPage(): JSX.Element {
                 background: 'var(--bg-secondary)',
                 border: '1px solid var(--border)',
                 borderRadius: 12,
-                padding: 12,
+                padding: '10px 12px',
                 display: 'flex',
-                flexDirection: 'column',
+                alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: 8,
+                gap: 10,
               }}
             >
-              <div>
-                <div style={{ fontSize: '1.5rem', marginBottom: 4 }}>{act.icon}</div>
-                <div style={{ fontWeight: 600, color: 'var(--cream)', fontSize: '0.92rem' }}>{act.title}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: 2 }}>{act.desc}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{act.icon}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--cream)', fontSize: '0.9rem', lineHeight: 1.2 }}>
+                    {act.title}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                    {act.desc}
+                  </div>
+                </div>
               </div>
               <button
                 type="button"
                 className="ll-pill gold"
-                style={{ cursor: 'pointer', alignSelf: 'flex-start', padding: '4px 12px' }}
+                style={{ cursor: 'pointer', flexShrink: 0, padding: '5px 12px', fontWeight: 600 }}
                 onClick={() => performActivity(act.title)}
               >
                 {act.btnLabel}
