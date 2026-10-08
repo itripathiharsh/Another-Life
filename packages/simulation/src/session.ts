@@ -1,0 +1,548 @@
+// Interactive life session (Stage 4). Stepwise advance + pending choices,
+// built on the same engine primitives and effect conventions (effects.ts)
+// as the auto-run slice — but pauses at every choice point instead of
+// auto-resolving. Fully serializable (rng state included) for save/load.
+
+import { addYearsISO } from './engine';
+import { applyConsequence, type EffectBundle } from './effects';
+import {
+  contextFromPlayer,
+  createEventRecord,
+  isEligible,
+  resolveOutcome,
+  resetInstanceCounter,
+  triggerDue,
+  type Choice,
+  type EvalContext,
+  type EventRecord,
+  type ScheduledEvent,
+  type SimEventTemplate,
+} from './events';
+import {
+  createFamily,
+  createRelationship,
+  type FamilyRecord,
+  type Relationship,
+} from './family';
+import { computeLegacy, type DeathCause, type Legacy } from './legacy';
+import {
+  agePlayer,
+  createPlayer,
+  killPlayer,
+  stageForAge,
+  type CharacterState,
+} from './player';
+import { createSerializableRng } from './rng';
+import { annualHealthDrift, applyEconomy, gainEducation, setOccupation } from './systems';
+
+export const SESSION_SCHEMA_VERSION = 1;
+export const ENGINE_VERSION = '0.4.0-stage4';
+
+export interface SessionLifeConfig {
+  name: string;
+  birthDate: string;
+  locationId: string;
+  classId: string;
+  schoolStartAge: number;
+  schoolEndAge: number;
+  workStartAge: number;
+  occupationId: string;
+  yearlyIncome: number;
+  yearlyExpenses: number;
+  friendName: string;
+}
+
+export interface SessionState {
+  version: number;
+  seed: number;
+  rngState: number;
+  lifespan: number;
+  date: string;
+  player: CharacterState;
+  family: FamilyRecord;
+  relationships: Relationship[];
+  scheduled: ScheduledEvent[];
+  history: EventRecord[];
+  flags: Record<string, number>;
+  firedIds: string[];
+  timeline: string[];
+  schooled: boolean;
+  status: 'active' | 'dead';
+  death: { date: string; age: number; cause: DeathCause } | undefined;
+  life: SessionLifeConfig;
+}
+
+export class SessionError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export function createSession(seed: number, life: SessionLifeConfig): SessionState {
+  resetInstanceCounter();
+  const rng = createSerializableRng(seed);
+  const lifespan = 55 + Math.floor(rng.next() * 20);
+  const player = createPlayer({
+    id: 'player.session',
+    name: life.name,
+    birthDate: life.birthDate,
+    locationId: life.locationId,
+    classId: life.classId,
+  });
+  const friend = createRelationship({ id: 'rel.friend', type: 'friend', name: life.friendName });
+  const timeline = [
+    `${life.birthDate} (age 0, birth): Born in ${life.locationId}`,
+  ];
+  return {
+    version: SESSION_SCHEMA_VERSION,
+    seed,
+    rngState: rng.getState(),
+    lifespan,
+    date: life.birthDate,
+    player,
+    family: createFamily(),
+    relationships: [friend],
+    scheduled: [],
+    history: [],
+    flags: {},
+    firedIds: [],
+    timeline,
+    schooled: false,
+    status: 'active',
+    death: undefined,
+    life,
+  };
+}
+
+function sessionContext(session: SessionState): EvalContext {
+  return {
+    ...contextFromPlayer(session.player, session.date),
+    ...session.flags,
+  } as EvalContext;
+}
+
+export interface PendingChoiceInfo {
+  id: string;
+  title: string;
+  description?: string;
+  baseProbability: number;
+}
+
+export interface PendingEvent {
+  eventId: string;
+  title: string;
+  description: string;
+  viaScheduled: boolean;
+  choices: PendingChoiceInfo[];
+}
+
+/** All choice points currently awaiting the player (revalidated). */
+export function pendingChoices(
+  session: SessionState,
+  templates: readonly SimEventTemplate[],
+): PendingEvent[] {
+  if (session.status !== 'active') return [];
+  const ctx = sessionContext(session);
+  const out: PendingEvent[] = [];
+  const seen = new Set<string>();
+
+  const collect = (template: SimEventTemplate, viaScheduled: boolean): void => {
+    if (seen.has(template.id) || session.firedIds.includes(template.id)) return;
+    const choices = template.choices
+      .filter((ch) => isEligible(ch.requirements, ctx))
+      .map((ch) => ({
+        id: ch.id,
+        title: ch.title,
+        description: ch.description,
+        baseProbability: ch.baseProbability,
+      }));
+    if (choices.length === 0) return;
+    seen.add(template.id);
+    out.push({
+      eventId: template.id,
+      title: template.title,
+      description: template.description,
+      viaScheduled,
+      choices,
+    });
+  };
+
+  for (const template of templates) {
+    if (isEligible(template.requirements, ctx)) collect(template, false);
+  }
+  for (const s of session.scheduled) {
+    if (!triggerDue(s, ctx)) continue;
+    const template = templates.find((t) => t.id === s.eventId);
+    if (template && isEligible(template.requirements, ctx)) collect(template, true);
+  }
+  return out;
+}
+
+export type AdvanceStop = 'choice' | 'dead' | 'ok';
+
+export interface AdvanceResult {
+  stopped: AdvanceStop;
+  pending: PendingEvent[];
+}
+
+/**
+ * Advance up to `years` life-years, pausing at the first choice point.
+ * Yearly upkeep (aging, health drift, economy, school, work, history
+ * notes) mirrors the slice runner. Expired/invalid scheduled items are
+ * cancelled with a log line (p4 §53).
+ */
+export function advanceSession(
+  session: SessionState,
+  templates: readonly SimEventTemplate[],
+  historicalNotes: (date: string, locationId: string) => string[],
+  years: number,
+): AdvanceResult {
+  if (session.status !== 'active') {
+    return { stopped: 'dead', pending: [] };
+  }
+  if (!Number.isInteger(years) || years < 1 || years > 120) {
+    throw new SessionError('bad-advance', 'years must be an integer 1..120');
+  }
+
+  for (let step = 0; step < years; step++) {
+    processYear(session, historicalNotes);
+    if (session.status !== 'active') {
+      return { stopped: 'dead', pending: [] };
+    }
+    // Cancel scheduled items that can never fire (revalidation, p4 §53).
+    const kept: ScheduledEvent[] = [];
+    for (const s of session.scheduled) {
+      const template = templates.find((t) => t.id === s.eventId);
+      if (!template) {
+        session.timeline.push(
+          `${session.date} (age ${session.player.age}): Scheduled ${s.eventId} has no template — dropped`,
+        );
+        continue;
+      }
+      if (s.expirationDate !== undefined && session.date > s.expirationDate) {
+        session.timeline.push(
+          `${session.date} (age ${session.player.age}): Scheduled ${s.eventId} expired — cancelled`,
+        );
+        continue;
+      }
+      kept.push(s);
+    }
+    session.scheduled = kept;
+
+    const pending = pendingChoices(session, templates);
+    if (pending.length > 0) {
+      return { stopped: 'choice', pending };
+    }
+  }
+  return { stopped: 'ok', pending: [] };
+}
+
+function processYear(
+  session: SessionState,
+  historicalNotes: (date: string, locationId: string) => string[],
+): void {
+  const life = session.life;
+  const newAge = session.player.age + 1;
+  const date = addYearsISO(life.birthDate, newAge);
+  let player = agePlayer(session.player, 1);
+  player = {
+    ...player,
+    health: annualHealthDrift(player.health, {
+      age: player.age,
+      healthcareAccess: player.age < 2 ? 'none' : 'basic',
+      livingConditions: 'average',
+      occupationHazard: 0,
+    }),
+  };
+  const isDependentChild = !player.occupationId && newAge < life.workStartAge;
+  const unempExpenses = isDependentChild ? 0 : 20;
+  player = player.occupationId
+    ? applyEconomy(player, { income: life.yearlyIncome, expenses: life.yearlyExpenses })
+    : applyEconomy(player, { income: 0, expenses: unempExpenses });
+
+  // Passive yields from owned properties, farmland and commercial stalls
+  const propertyYield = (player.properties ?? []).reduce((sum, p) => sum + p.annualYield, 0);
+  if (propertyYield > 0) {
+    player = { ...player, wealth: player.wealth + propertyYield };
+  }
+
+  session.player = player;
+  session.date = date;
+
+  const log = (msg: string): void => {
+    session.timeline.push(`${date} (age ${player.age}, ${stageForAge(player.age)}): ${msg}`);
+  };
+
+  if (propertyYield > 0) {
+    log(`Collected +${propertyYield} coins in property yields and rents`);
+  }
+
+  if (newAge >= life.schoolStartAge && newAge < life.schoolEndAge) {
+    if (!session.schooled) {
+      log('Started school');
+      session.schooled = true;
+    }
+    session.player = gainEducation(session.player, 1);
+  }
+  if (newAge === life.schoolEndAge && session.schooled) log('Left school');
+  if (newAge === life.workStartAge) {
+    session.player = setOccupation(session.player, {
+      occupationId: life.occupationId,
+      income: life.yearlyIncome,
+    });
+    log(`Started work as ${life.occupationId} (income ${life.yearlyIncome}/yr)`);
+  }
+
+  for (const note of historicalNotes(date, life.locationId)) {
+    const tag = `[world] ${note}`;
+    if (!session.timeline.some((line) => line.includes(tag))) {
+      session.timeline.push(`${date}: ${tag}`);
+    }
+  }
+
+  if (session.player.age >= session.lifespan || session.player.health <= 0) {
+    const cause: DeathCause =
+      session.player.health <= 0 && session.player.age < session.lifespan ? 'disease' : 'old_age';
+    session.player = killPlayer(session.player);
+    session.status = 'dead';
+    session.death = { date, age: session.player.age, cause };
+    log(`Died (${cause})`);
+  }
+}
+
+export interface ChoiceResult {
+  success: boolean;
+  roll: number;
+  finalProbability: number;
+  pending: PendingEvent[];
+}
+
+/** Resolve one pending choice. Throws SessionError on unknown/ineligible. */
+export function resolveSessionChoice(
+  session: SessionState,
+  templates: readonly SimEventTemplate[],
+  eventId: string,
+  choiceId: string,
+): ChoiceResult {
+  if (session.status !== 'active') {
+    throw new SessionError('life-ended', 'This life has ended; no choices remain');
+  }
+  const pending = pendingChoices(session, templates);
+  const event = pending.find((p) => p.eventId === eventId);
+  if (!event) {
+    throw new SessionError('unknown-event', `No pending event ${eventId}`);
+  }
+  const template = templates.find((t) => t.id === eventId);
+  const choice: Choice | undefined = template?.choices.find((c) => c.id === choiceId);
+  if (!choice || !event.choices.some((c) => c.id === choiceId)) {
+    throw new SessionError('ineligible-choice', `Choice ${choiceId} is not available`);
+  }
+
+  const rng = createSerializableRng(session.seed);
+  rng.setState(session.rngState);
+  const outcome = resolveOutcome(choice.baseProbability, 0, () => rng.next());
+  session.rngState = rng.getState();
+
+  const record = createEventRecord({
+    eventId,
+    timestamp: session.date,
+    locationId: session.player.locationId,
+  });
+  record.selectedChoiceId = choice.id;
+  record.outcome = outcome.success ? 'success' : 'failure';
+  const applicable = outcome.success
+    ? choice.consequences
+    : choice.consequences.filter(
+      (c) => c.target === 'player' && c.property === 'wealth' && c.op === 'ADD' &&
+        typeof c.value === 'number' && c.value < 0,
+    );
+  const bundle: EffectBundle = {
+    player: session.player,
+    family: session.family,
+    relationships: session.relationships,
+    flags: session.flags,
+    scheduled: session.scheduled,
+  };
+  const sealed: string[] = [];
+  for (const c of applicable) {
+    if (c.timing === 'hidden') {
+      sealed.push(`${session.date}: [hidden consequence sealed — source ${c.source}]`);
+    }
+    applyConsequence(bundle, c, session.date);
+    record.consequencesApplied.push(c);
+  }
+  session.player = bundle.player;
+  session.family = bundle.family;
+  session.relationships = bundle.relationships;
+  session.scheduled = bundle.scheduled.filter((s) => s.eventId !== eventId);
+  session.history.push(record);
+  session.firedIds.push(eventId);
+  session.timeline.push(
+    `${session.date} (age ${session.player.age}): ` +
+    `Event ${eventId} — chose "${choice.title}" → ${record.outcome} ` +
+    `(roll ${outcome.roll.toFixed(1)} vs ${outcome.finalProbability})`,
+  );
+  for (const line of sealed) session.timeline.push(line);
+
+  return {
+    success: outcome.success,
+    roll: outcome.roll,
+    finalProbability: outcome.finalProbability,
+    pending: pendingChoices(session, templates),
+  };
+}
+
+/** Multidimensional legacy once the life has ended (undefined while alive). */
+export function sessionLegacy(session: SessionState): Legacy | undefined {
+  if (session.status !== 'dead' || !session.death) return undefined;
+  return computeLegacy({
+    player: session.player,
+    family: session.family,
+    history: session.history,
+    relationshipCount: session.relationships.length,
+    divergenceCount: 0,
+    death: { ...session.death, locationId: session.player.locationId },
+  });
+}
+
+// --- Versioned snapshots (plan §40-41, p7 §68) ---
+
+export interface SessionSnapshot extends SessionState {
+  schemaVersion: number;
+  engineVersion: string;
+  contentVersion: string;
+}
+
+export function exportSessionSnapshot(
+  session: SessionState,
+  contentVersion: string,
+): string {
+  const snapshot: SessionSnapshot = {
+    ...session,
+    history: session.history.map((h) => ({ ...h, causalChildren: [...h.causalChildren] })),
+    timeline: [...session.timeline],
+    firedIds: [...session.firedIds],
+    schemaVersion: SESSION_SCHEMA_VERSION,
+    engineVersion: ENGINE_VERSION,
+    contentVersion,
+  };
+  return JSON.stringify(snapshot);
+}
+
+export function importSessionSnapshot(json: string): SessionState {
+  const parsed = JSON.parse(json) as SessionSnapshot;
+  if (parsed.schemaVersion !== SESSION_SCHEMA_VERSION) {
+    throw new SessionError(
+      'bad-save-version',
+      `Unsupported save schema ${String(parsed.schemaVersion)} (expected ${SESSION_SCHEMA_VERSION})`,
+    );
+  }
+  const { schemaVersion: _sv, engineVersion: _ev, contentVersion: _cv, ...session } = parsed;
+  void _sv;
+  void _ev;
+  void _cv;
+  return session;
+}
+
+export function buyPropertySession(
+  session: SessionState,
+  prop: { id: string; name: string; type: 'residence' | 'commercial' | 'farmland'; cost: number; annualYield: number },
+): SessionState {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+  if (session.player.age < 18) throw new SessionError('ineligible', 'Minors under age 18 cannot acquire property deeds');
+  if (session.player.wealth < prop.cost) throw new SessionError('insufficient-wealth', 'Not enough coins to acquire property deed');
+
+  const asset = {
+    id: prop.id,
+    name: prop.name,
+    type: prop.type,
+    value: prop.cost,
+    annualYield: prop.annualYield,
+    acquiredAge: session.player.age,
+  };
+  session.player = {
+    ...session.player,
+    wealth: session.player.wealth - prop.cost,
+    properties: [...(session.player.properties ?? []), asset],
+  };
+  session.timeline.push(
+    `${session.date} (age ${session.player.age}): Acquired ${prop.name} deed for ${prop.cost} coins (annual yield +${prop.annualYield}/yr)`,
+  );
+  return session;
+}
+
+export function marryPartnerSession(
+  session: SessionState,
+  partnerName: string,
+): SessionState {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+  if (session.player.age < 18) throw new SessionError('ineligible', 'Cannot marry before legal adulthood (Age 18+)');
+  if (session.family.members.some((m) => m.relation === 'spouse' && m.alive)) {
+    throw new SessionError('already-married', 'Character is already married');
+  }
+
+  const birthYear = parseInt(session.date.slice(0, 4), 10) - Math.max(18, session.player.age - 1);
+  const spouse = {
+    id: `spouse.${Date.now()}`,
+    relation: 'spouse' as const,
+    name: partnerName,
+    birthYear,
+    alive: true,
+  };
+  session.family.members.push(spouse);
+  session.relationships.push(createRelationship({ id: `rel.spouse.${Date.now()}`, type: 'spouse', name: partnerName }));
+  session.timeline.push(`${session.date} (age ${session.player.age}): Married ${partnerName} in a celebrated community ceremony!`);
+  session.player.reputation = Math.min(100, session.player.reputation + 10);
+  return session;
+}
+
+export function haveChildSession(
+  session: SessionState,
+  childName: string,
+): SessionState {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+  if (session.player.age < 18) throw new SessionError('ineligible', 'Cannot bear children before age 18');
+
+  const birthYear = parseInt(session.date.slice(0, 4), 10);
+  const child = {
+    id: `child.${Date.now()}.${session.family.members.length}`,
+    relation: 'child' as const,
+    name: childName,
+    birthYear,
+    alive: true,
+  };
+  session.family.members.push(child);
+  session.relationships.push(createRelationship({ id: `rel.child.${Date.now()}`, type: 'child', name: childName }));
+  session.timeline.push(`${session.date} (age ${session.player.age}): Welcomed child ${childName} into the family!`);
+  return session;
+}
+
+export function createHeirSession(session: SessionState): SessionState {
+  if (session.status !== 'dead') throw new SessionError('life-active', 'Cannot play as heir while character is still living');
+
+  const child = session.family.members.find((m) => m.relation === 'child' && m.alive);
+  const sibling = session.family.members.find((m) => m.relation === 'sibling' && m.alive);
+  const heirName = child?.name ?? sibling?.name ?? `${session.player.name} Jr.`;
+  const currentYear = parseInt(session.date.slice(0, 4), 10);
+  const heirBirthYear = child?.birthYear ?? (currentYear - 20);
+  const heirAge = Math.max(1, currentYear - heirBirthYear);
+  const inheritedWealth = Math.max(50, Math.round(session.player.wealth * 0.8));
+
+  const newLifeConfig: SessionLifeConfig = {
+    ...session.life,
+    name: heirName,
+    birthDate: `${heirBirthYear}-01-01`,
+  };
+
+  const newSession = createSession(session.seed + 1, newLifeConfig);
+  newSession.player.age = heirAge;
+  newSession.player.wealth = inheritedWealth;
+  newSession.player.properties = [...(session.player.properties ?? [])];
+  newSession.date = session.date;
+  newSession.timeline.push(
+    `${session.date}: Assumed household leadership as heir to ${session.player.name} (inherited ${inheritedWealth} coins and family estate)`,
+  );
+  return newSession;
+}

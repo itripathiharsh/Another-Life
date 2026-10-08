@@ -1,0 +1,25 @@
+{
+  "name": "legacylife",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LegacyLife — historical life-simulation game. Generic engine, data-driven eras.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/historical && tsc --noEmit -p packages/content && tsc --noEmit -p packages/simulation && tsc --noEmit -p packages/api && tsc --noEmit -p apps/web",
+    "slice": "tsx scripts/vertical-slice.ts",
+    "api": "tsx packages/api/src/serve.ts",
+    "web": "npm run dev --workspace=@legacylife/web",
+    "web:build": "npm run build --workspace=@legacylife/web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

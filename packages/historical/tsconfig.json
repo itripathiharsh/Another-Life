@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@legacylife/shared": ["../shared/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

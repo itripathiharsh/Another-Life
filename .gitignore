@@ -1,0 +1,28 @@
+# Dependencies / builds
+node_modules/
+dist/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Local caches & temp — everything stays inside the repo (D-drive rule)
+.cache/
+
+# Runtime save data (API file store) — local only, never committed
+.data/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Planning phases & duplicate reference archives (per user instruction)
+docs/phases/
+docs/design-reference/
+docs/prototypes/
+apps/web/app/\[...slug\]/
+
