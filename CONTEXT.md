@@ -369,6 +369,27 @@
   - `npm test` passes 79/79 tests across all 7 test files.
   - Zero writes to C: drive maintained.
 
+---
+
+### Iteration 012 — 2026-10-09 — Git Repository Initialization & GitHub Remote Push ✅
+
+**User Request:**
+- Push to GitHub remote `https://github.com/itripathiharsh/Another-Life`.
+- Push only relevant files; exclude raw planning phase documents.
+- Keep `CONTEXT.md` and `AGENTS.md` / `CLAUDE.md`.
+
+**Done:**
+- Initialized clean git repository at `D:\Another life\legacylife\.git`.
+- Configured `.gitignore` to strictly ignore:
+  - Raw planning files (`docs/phases/`)
+  - Duplicate reference image archives (`docs/design-reference/`, `docs/prototypes/`)
+  - Build and runtime caches (`node_modules/`, `.next/`, `.cache/`, `.data/`, `dist/`, `*.tsbuildinfo`, `apps/web/app/[...slug]/`)
+- Created [`AGENTS.md`](./AGENTS.md) detailing architecture, principles, commands, and rules.
+- Retained [`CONTEXT.md`](./CONTEXT.md), [`CLAUDE.md`](./CLAUDE.md), all 6 workspace packages/apps, historical era specifications in `docs/eras/`, the mini-games catalog in `docs/MINI_GAMES_CATALOG.md`, and Next.js public assets in `apps/web/public/`.
+- Committed 124 curated project files (40,088 lines of code).
+- Added remote `origin https://github.com/itripathiharsh/Another-Life` and successfully pushed to branch `main` (`git push -u origin main`).
+
+
 
 
 
