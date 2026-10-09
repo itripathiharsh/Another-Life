@@ -102,9 +102,10 @@ export default function LifeTimelinePage(): JSX.Element {
     });
   }
 
-  // Parse real history entries from view.timelineTail
-  if (view && view.timelineTail.length > 0) {
-    view.timelineTail.forEach((note) => {
+  // Parse real history entries from full timeline (or fallback to timelineTail)
+  const timelineEntries = view?.timeline ?? view?.timelineTail ?? [];
+  if (timelineEntries.length > 0) {
+    timelineEntries.forEach((note) => {
       const match = note.match(/^(\d{4})-\d{2}-\d{2}\s*(?:\(age (\d+)[^)]*\))?:\s*(.*)$/);
       if (match) {
         const itemYear = parseInt(match[1]!, 10);

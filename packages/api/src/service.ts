@@ -16,24 +16,31 @@ import {
 import { assertValidDate } from '../../shared/src/index';
 import {
   advanceSession,
+  applyJobSession,
   buyPropertySession,
   createHeirSession,
   createSession,
   exportSessionSnapshot,
   haveChildSession,
   importSessionSnapshot,
+  interactRelationshipSession,
   marryPartnerSession,
   pendingChoices,
+  performHealthActivitySession,
   resolveSessionChoice,
   sessionLegacy,
   SessionError,
   stageForAge,
+  type Consequence,
+  type DivergenceRecord,
+  type HealthActivityType,
   type Legacy,
   type PendingEvent,
+  type RelationshipAction,
   type SessionLifeConfig,
   type SessionState,
 } from '../../simulation/src/index';
-import { FileSaveStore } from './store';
+import { type SaveStore } from './store-types';
 
 export const CONTENT_SET_ID = 'lucknow-slice-v1';
 
@@ -83,6 +90,21 @@ export interface PlayerView {
   properties: import('../../simulation/src/index').PropertyAsset[];
 }
 
+export interface SaveSummary {
+  id: string;
+  name: string;
+  age: number;
+  status: 'active' | 'dead';
+  date: string;
+  locationId: string;
+  classId: string;
+  occupationId?: string;
+  wealth: number;
+  generation: number;
+  ancestorId?: string;
+  descendantId?: string;
+}
+
 export interface LifeView {
   id: string;
   date: string;
@@ -90,9 +112,14 @@ export interface LifeView {
   player: PlayerView;
   familyMembers: { relation: string; name: string; alive: boolean }[];
   pending: PendingEvent[];
+  timeline: string[];
   timelineTail: string[];
   timelineLength: number;
   legacy: Legacy | undefined;
+  ancestorId?: string;
+  descendantId?: string;
+  generation?: number;
+  divergences?: DivergenceRecord[];
 }
 
 let idCounter = 0;
@@ -129,16 +156,21 @@ function toView(id: string, session: SessionState): LifeView {
       alive: m.alive,
     })),
     pending: pendingChoices(session, templatesForLocation(p.locationId)),
+    timeline: [...session.timeline],
     timelineTail: session.timeline.slice(-25),
     timelineLength: session.timeline.length,
     legacy: sessionLegacy(session),
+    ancestorId: session.ancestorId,
+    descendantId: session.descendantId,
+    generation: session.generation ?? 1,
+    divergences: session.divergences ?? [],
   };
 }
 
 export class LifeService {
-  private readonly store: FileSaveStore;
+  private readonly store: SaveStore;
 
-  constructor(store: FileSaveStore) {
+  constructor(store: SaveStore) {
     this.store = store;
   }
 
@@ -218,6 +250,33 @@ export class LifeService {
     return this.store.list();
   }
 
+  listLivesDetail(): SaveSummary[] {
+    const ids = this.store.list();
+    const summaries: SaveSummary[] = [];
+    for (const id of ids) {
+      try {
+        const { session } = this.load(id);
+        summaries.push({
+          id,
+          name: session.player.name,
+          age: session.player.age,
+          status: session.status,
+          date: session.date,
+          locationId: session.player.locationId,
+          classId: session.player.classId,
+          occupationId: session.player.occupationId,
+          wealth: session.player.wealth,
+          generation: session.generation ?? 1,
+          ancestorId: session.ancestorId,
+          descendantId: session.descendantId,
+        });
+      } catch {
+        // Skip unreadable or corrupted saves
+      }
+    }
+    return summaries;
+  }
+
   deleteLife(id: string): void {
     try {
       this.store.remove(id);
@@ -244,6 +303,7 @@ export class LifeService {
     success: boolean;
     roll: number;
     finalProbability: number;
+    appliedConsequences: Consequence[];
   } {
     const { session } = this.load(id);
     const templates = templatesForLocation(session.player.locationId);
@@ -311,9 +371,58 @@ export class LifeService {
   }
 
   playAsHeir(id: string): LifeView {
+    const { session: ancestorSession } = this.load(id);
+    if (ancestorSession.status !== 'dead') {
+      throw new SessionError('life-active', 'Cannot play as heir while character is still living');
+    }
+    if (ancestorSession.descendantId && this.store.exists(ancestorSession.descendantId)) {
+      return this.getLife(ancestorSession.descendantId);
+    }
+    const heirSeed = (ancestorSession.seed + 1) % 2147483647;
+    const heirId = newId(heirSeed);
+    const heirSession = createHeirSession(ancestorSession, id);
+    ancestorSession.descendantId = heirId;
+    this.persist(id, ancestorSession);
+    this.persist(heirId, heirSession);
+    return toView(heirId, heirSession);
+  }
+
+  applyJob(id: string, occupationId: string, yearlyIncome?: number): LifeView {
     const { session } = this.load(id);
-    const heirSession = createHeirSession(session);
-    this.persist(id, heirSession);
-    return toView(id, heirSession);
+    applyJobSession(session, occupationId, yearlyIncome);
+    this.persist(id, session);
+    return toView(id, session);
+  }
+
+  performHealthActivity(id: string, activityType: HealthActivityType): LifeView & { message: string } {
+    const { session } = this.load(id);
+    const res = performHealthActivitySession(session, activityType);
+    this.persist(id, session);
+    return { ...toView(id, session), message: res.message };
+  }
+
+  interactRelationship(
+    id: string,
+    relId: string,
+    action: RelationshipAction,
+  ): LifeView & { message: string } {
+    const { session } = this.load(id);
+    const res = interactRelationshipSession(session, relId, action);
+    this.persist(id, session);
+    return { ...toView(id, session), message: res.message };
+  }
+
+  importSave(snapshotJsonOrObj: string | Record<string, unknown>): LifeView {
+    const rawJson =
+      typeof snapshotJsonOrObj === 'string'
+        ? snapshotJsonOrObj
+        : JSON.stringify(snapshotJsonOrObj);
+    const session = importSessionSnapshot(rawJson);
+    const id = newId(session.seed);
+    this.persist(id, session);
+    return toView(id, session);
   }
 }
+
+
+

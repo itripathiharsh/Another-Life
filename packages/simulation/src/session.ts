@@ -13,6 +13,7 @@ import {
   resetInstanceCounter,
   triggerDue,
   type Choice,
+  type Consequence,
   type EvalContext,
   type EventRecord,
   type ScheduledEvent,
@@ -24,6 +25,11 @@ import {
   type FamilyRecord,
   type Relationship,
 } from './family';
+import {
+  createDivergence,
+  type DivergenceLevel,
+  type DivergenceRecord,
+} from './divergence';
 import { computeLegacy, type DeathCause, type Legacy } from './legacy';
 import {
   agePlayer,
@@ -70,6 +76,10 @@ export interface SessionState {
   status: 'active' | 'dead';
   death: { date: string; age: number; cause: DeathCause } | undefined;
   life: SessionLifeConfig;
+  ancestorId?: string;
+  descendantId?: string;
+  generation?: number;
+  divergences?: DivergenceRecord[];
 }
 
 export class SessionError extends Error {
@@ -113,6 +123,8 @@ export function createSession(seed: number, life: SessionLifeConfig): SessionSta
     status: 'active',
     death: undefined,
     life,
+    generation: 1,
+    divergences: [],
   };
 }
 
@@ -317,6 +329,7 @@ export interface ChoiceResult {
   roll: number;
   finalProbability: number;
   pending: PendingEvent[];
+  appliedConsequences: Consequence[];
 }
 
 /** Resolve one pending choice. Throws SessionError on unknown/ineligible. */
@@ -354,10 +367,12 @@ export function resolveSessionChoice(
   record.outcome = outcome.success ? 'success' : 'failure';
   const applicable = outcome.success
     ? choice.consequences
-    : choice.consequences.filter(
-      (c) => c.target === 'player' && c.property === 'wealth' && c.op === 'ADD' &&
-        typeof c.value === 'number' && c.value < 0,
-    );
+    : (choice.failureConsequences && choice.failureConsequences.length > 0)
+      ? choice.failureConsequences
+      : choice.consequences.filter(
+        (c) => c.target === 'player' && c.property === 'wealth' && c.op === 'ADD' &&
+          typeof c.value === 'number' && c.value < 0,
+      );
   const bundle: EffectBundle = {
     player: session.player,
     family: session.family,
@@ -369,6 +384,24 @@ export function resolveSessionChoice(
   for (const c of applicable) {
     if (c.timing === 'hidden') {
       sealed.push(`${session.date}: [hidden consequence sealed — source ${c.source}]`);
+    }
+    if (c.target === 'world' && (c.property === 'divergence' || c.property.startsWith('divergence:'))) {
+      const scopeVal: DivergenceLevel = typeof c.value === 'number' && c.value >= 0 && c.value <= 6
+        ? (c.value as DivergenceLevel)
+        : 2;
+      const div = createDivergence({
+        id: `div.${Date.now()}.${session.divergences?.length ?? 0}`,
+        triggerEventId: eventId,
+        date: session.date,
+        scope: scopeVal,
+        originalState: 'Historical baseline course',
+        newState: `Divergent timeline branch caused by "${choice.title}"`,
+        cause: `Player choice in event ${eventId}`,
+        affectedEntityIds: [session.player.locationId],
+      });
+      if (!session.divergences) session.divergences = [];
+      session.divergences.push(div);
+      sealed.push(`${session.date}: [divergence] Historical branch created: ${div.newState} (Scope L${div.scope})`);
     }
     applyConsequence(bundle, c, session.date);
     record.consequencesApplied.push(c);
@@ -391,6 +424,7 @@ export function resolveSessionChoice(
     roll: outcome.roll,
     finalProbability: outcome.finalProbability,
     pending: pendingChoices(session, templates),
+    appliedConsequences: applicable,
   };
 }
 
@@ -402,7 +436,7 @@ export function sessionLegacy(session: SessionState): Legacy | undefined {
     family: session.family,
     history: session.history,
     relationshipCount: session.relationships.length,
-    divergenceCount: 0,
+    divergenceCount: session.divergences?.length ?? 0,
     death: { ...session.death, locationId: session.player.locationId },
   });
 }
@@ -424,6 +458,7 @@ export function exportSessionSnapshot(
     history: session.history.map((h) => ({ ...h, causalChildren: [...h.causalChildren] })),
     timeline: [...session.timeline],
     firedIds: [...session.firedIds],
+    divergences: session.divergences ? [...session.divergences] : [],
     schemaVersion: SESSION_SCHEMA_VERSION,
     engineVersion: ENGINE_VERSION,
     contentVersion,
@@ -519,7 +554,10 @@ export function haveChildSession(
   return session;
 }
 
-export function createHeirSession(session: SessionState): SessionState {
+export function createHeirSession(
+  session: SessionState,
+  ancestorLifeId?: string,
+): SessionState {
   if (session.status !== 'dead') throw new SessionError('life-active', 'Cannot play as heir while character is still living');
 
   const child = session.family.members.find((m) => m.relation === 'child' && m.alive);
@@ -537,6 +575,9 @@ export function createHeirSession(session: SessionState): SessionState {
   };
 
   const newSession = createSession(session.seed + 1, newLifeConfig);
+  newSession.ancestorId = ancestorLifeId ?? session.player.id;
+  newSession.generation = (session.generation ?? 1) + 1;
+  newSession.divergences = [...(session.divergences ?? [])];
   newSession.player.age = heirAge;
   newSession.player.wealth = inheritedWealth;
   newSession.player.properties = [...(session.player.properties ?? [])];
@@ -546,3 +587,151 @@ export function createHeirSession(session: SessionState): SessionState {
   );
   return newSession;
 }
+
+export function applyJobSession(
+  session: SessionState,
+  occupationId: string,
+  yearlyIncome?: number,
+): SessionState {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+  if (session.player.age < 14) throw new SessionError('ineligible', 'Cannot work before age 14');
+
+  const income = yearlyIncome ?? (session.player.locationId.startsWith('location.victorian_') ? 120 : 180);
+  session.player = {
+    ...session.player,
+    occupationId,
+  };
+  session.life.occupationId = occupationId;
+  session.life.yearlyIncome = income;
+  const occTitle = occupationId.replace(/^occupation\./, '').replace(/_/g, ' ');
+  session.timeline.push(
+    `${session.date} (age ${session.player.age}): Appointed to position of ${occTitle} (earning ${income} coins/yr)`,
+  );
+  return session;
+}
+
+export type HealthActivityType = 'exercise' | 'rest' | 'consultation' | 'medicine';
+
+export function performHealthActivitySession(
+  session: SessionState,
+  activityType: HealthActivityType,
+): { session: SessionState; healthDelta: number; wealthDelta: number; message: string } {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+
+  let healthDelta = 0;
+  let wealthDelta = 0;
+  let message = '';
+
+  switch (activityType) {
+    case 'exercise':
+      healthDelta = Math.min(100 - session.player.health, 5);
+      message = 'Completed physical conditioning and exercise (+5 Health)';
+      break;
+    case 'rest':
+      healthDelta = Math.min(100 - session.player.health, 3);
+      message = 'Took prolonged rest and restorative sleep (+3 Health)';
+      break;
+    case 'consultation': {
+      const fee = 15;
+      if (session.player.wealth < fee) {
+        throw new SessionError('insufficient-wealth', `Cannot afford physician consultation fee of ${fee} coins`);
+      }
+      wealthDelta = -fee;
+      healthDelta = Math.min(100 - session.player.health, 10);
+      message = `Consulted physician. Received diagnosis and medical treatment (-${fee} coins, +10 Health)`;
+      break;
+    }
+    case 'medicine': {
+      const cost = 25;
+      if (session.player.wealth < cost) {
+        throw new SessionError('insufficient-wealth', `Cannot afford restorative medicine cost of ${cost} coins`);
+      }
+      wealthDelta = -cost;
+      healthDelta = Math.min(100 - session.player.health, 15);
+      message = `Purchased and took restorative medicine/tonics (-${cost} coins, +15 Health)`;
+      break;
+    }
+    default:
+      throw new SessionError('bad-activity', `Unknown health activity "${String(activityType)}"`);
+  }
+
+  session.player = {
+    ...session.player,
+    health: Math.min(100, Math.max(0, session.player.health + healthDelta)),
+    wealth: Math.max(0, session.player.wealth + wealthDelta),
+  };
+  session.timeline.push(`${session.date} (age ${session.player.age}): [health] ${message}`);
+
+  return { session, healthDelta, wealthDelta, message };
+}
+
+export type RelationshipAction = 'spend_time' | 'gift' | 'confide' | 'apologize';
+
+export function interactRelationshipSession(
+  session: SessionState,
+  relId: string,
+  action: RelationshipAction,
+): { session: SessionState; relationship: Relationship; message: string } {
+  if (session.status !== 'active') throw new SessionError('life-ended', 'Character has passed away');
+
+  let rel = session.relationships.find((r) => r.id === relId || r.name.toLowerCase() === relId.toLowerCase());
+  if (!rel) {
+    const member = session.family.members.find((m) => m.id === relId || m.name.toLowerCase() === relId.toLowerCase());
+    if (member) {
+      rel = createRelationship({ id: member.id, type: member.relation as any, name: member.name });
+      session.relationships.push(rel);
+    } else {
+      const relName = relId.includes('.') ? relId.split('.')[1]! : relId;
+      rel = createRelationship({ id: relId, type: 'friend', name: relName });
+      session.relationships.push(rel);
+    }
+  }
+
+  let deltaTrust = 0;
+  let deltaAffection = 0;
+  let wealthDelta = 0;
+  let desc = '';
+
+  switch (action) {
+    case 'spend_time':
+      deltaTrust = 4;
+      deltaAffection = 5;
+      desc = `Spent quality time with ${rel.name} (+4 Trust, +5 Affection)`;
+      break;
+    case 'gift': {
+      const giftCost = 10;
+      if (session.player.wealth < giftCost) {
+        throw new SessionError('insufficient-wealth', `Cannot afford a gift worth ${giftCost} coins`);
+      }
+      wealthDelta = -giftCost;
+      deltaAffection = 8;
+      deltaTrust = 4;
+      desc = `Presented a thoughtful gift to ${rel.name} (-${giftCost} coins, +8 Affection, +4 Trust)`;
+      break;
+    }
+    case 'confide':
+      deltaTrust = 8;
+      deltaAffection = 3;
+      desc = `Confided personal matters to ${rel.name} (+8 Trust, +3 Affection)`;
+      break;
+    case 'apologize':
+      deltaTrust = 5;
+      deltaAffection = 5;
+      rel.conflict = Math.max(0, rel.conflict - 10);
+      desc = `Offered a sincere apology to ${rel.name}, easing conflict`;
+      break;
+    default:
+      throw new SessionError('bad-action', `Unknown relationship action "${String(action)}"`);
+  }
+
+  session.player = {
+    ...session.player,
+    wealth: Math.max(0, session.player.wealth + wealthDelta),
+  };
+  rel.trust = Math.min(100, Math.max(0, rel.trust + deltaTrust));
+  rel.affection = Math.min(100, Math.max(0, rel.affection + deltaAffection));
+  session.timeline.push(`${session.date} (age ${session.player.age}): [relationship] ${desc}`);
+
+  return { session, relationship: rel, message: desc };
+}
+

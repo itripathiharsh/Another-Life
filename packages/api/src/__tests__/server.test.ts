@@ -113,4 +113,80 @@ describe('HTTP contract (Stage 4)', () => {
     const noRoute = await get('/nope');
     expect(noRoute.status).toBe(404);
   });
+
+  it('prevents duplicate mutations with idempotency key', async () => {
+    const created = await post('/lives', { seed: 99, name: 'Idempotency Test' });
+    const id = view(created.json)['id'] as string;
+
+    // Advance with idempotency header
+    const res1 = await fetch(`${base}/lives/${id}/advance`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'op-advance-1',
+      },
+      body: JSON.stringify({ years: 1 }),
+    });
+    expect(res1.status).toBe(200);
+    const json1 = (await res1.json()) as Record<string, unknown>;
+    const ageAfterFirst = view(json1['player'])['age'];
+
+    // Repeat with identical idempotency header
+    const res2 = await fetch(`${base}/lives/${id}/advance`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'op-advance-1',
+      },
+      body: JSON.stringify({ years: 1 }),
+    });
+    expect(res2.status).toBe(200);
+    const json2 = (await res2.json()) as Record<string, unknown>;
+    const ageAfterSecond = view(json2['player'])['age'];
+
+    // Idempotent: Age did not advance a second time!
+    expect(ageAfterSecond).toBe(ageAfterFirst);
+  });
+
+  it('handles career application, health activities, and relationships via HTTP', async () => {
+    const created = await post('/lives', { seed: 77, name: 'Full Feature Test' });
+    const id = view(created.json)['id'] as string;
+
+    // Advance to adulthood, resolving events along the way
+    while ((view((await get(`/lives/${id}`)).json)['player'] as { age: number }).age < 18) {
+      const adv = await post(`/lives/${id}/advance`, { years: 5 });
+      const pending = (view(adv.json)['pending'] as { eventId: string; choices: { id: string }[] }[])[0];
+      if (pending && pending.choices[0]) {
+        await post(`/lives/${id}/events/${pending.eventId}/choices`, { choiceId: pending.choices[0].id });
+      }
+    }
+
+    // Career application
+    const careerRes = await post(`/lives/${id}/career/apply`, {
+      occupationId: 'occupation.government_clerk',
+      yearlyIncome: 180,
+    });
+    expect(careerRes.status).toBe(200);
+    expect(view(view(careerRes.json)['player'])['occupationId']).toBe('occupation.government_clerk');
+
+    // Health activity
+    const healthRes = await post(`/lives/${id}/health/activity`, {
+      activityType: 'exercise',
+    });
+    expect(healthRes.status).toBe(200);
+    expect(typeof view(view(healthRes.json)['player'])['health']).toBe('number');
+
+    // Relationship interaction
+    const relRes = await post(`/lives/${id}/relationships/rel.friend/interact`, {
+      action: 'spend_time',
+    });
+    expect(relRes.status).toBe(200);
+
+    // List saves returns metadata
+    const listRes = await get('/lives');
+    expect(listRes.status).toBe(200);
+    const saves = view(listRes.json)['saves'] as { id: string; name: string }[];
+    expect(saves.some((s) => s.id === id && s.name === 'Full Feature Test')).toBe(true);
+  });
 });
+

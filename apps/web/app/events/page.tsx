@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useLife } from '../../components/LifeContext';
-import { ApiError, api } from '../../lib/api';
+import { ApiError, api, type Consequence } from '../../lib/api';
 
 interface ResolvedState {
   eventTitle: string;
@@ -11,6 +11,73 @@ interface ResolvedState {
   choiceTitle: string;
   choiceDesc?: string;
   success: boolean;
+  roll?: number;
+  finalProbability?: number;
+  appliedConsequences: Consequence[];
+}
+
+function formatConsequence(c: Consequence): {
+  icon: string;
+  label: string;
+  changeText: string;
+  isPositive: boolean;
+  isNegative: boolean;
+  note: string;
+} {
+  let icon = '📊';
+  let label = c.property;
+  if (c.property === 'wealth') {
+    icon = '🪙';
+    label = 'Wealth / Wealth Assets';
+  } else if (c.property === 'health') {
+    icon = '❤️';
+    label = 'Physical Health';
+  } else if (c.property === 'reputation') {
+    icon = '⭐';
+    label = 'Social Reputation';
+  } else if (c.property === 'educationYears') {
+    icon = '🎓';
+    label = 'Education & Study';
+  } else if (c.property === 'occupationId' || c.property === 'occupation') {
+    icon = '💼';
+    label = 'Occupation';
+  } else if (c.target === 'relationship') {
+    icon = '👥';
+    label = 'Relationship Affinity';
+  } else if (c.target === 'world') {
+    icon = '🌐';
+    label = `Historical Shift (${c.property})`;
+  }
+
+  const op = String(c.op).toLowerCase();
+  let changeText = String(c.value);
+  let isPositive = false;
+  let isNegative = false;
+
+  if (typeof c.value === 'number') {
+    if (op === 'add') {
+      changeText = c.value > 0 ? `+${c.value}` : `${c.value}`;
+      isPositive = c.value > 0;
+      isNegative = c.value < 0;
+    } else if (op === 'multiply') {
+      changeText = `×${c.value}`;
+      isPositive = c.value > 1;
+      isNegative = c.value < 1;
+    } else {
+      changeText = `→ ${c.value}`;
+    }
+  } else {
+    changeText = `${c.value}`;
+  }
+
+  const note =
+    c.target === 'relationship' && c.relationshipId
+      ? `Bond with ${c.relationshipId.replace(/^person\./, '').replace(/_/g, ' ')}`
+      : c.source
+      ? `From: ${c.source.replace(/^event\./, '').replace(/_/g, ' ')}`
+      : 'Authoritative outcome';
+
+  return { icon, label, changeText, isPositive, isNegative, note };
 }
 
 // Generate realistic predictive tags for choices if not specified in engine
@@ -65,6 +132,9 @@ export default function EventsPage(): JSX.Element {
         choiceTitle,
         choiceDesc,
         success: result.success === true,
+        roll: result.roll,
+        finalProbability: result.finalProbability,
+        appliedConsequences: result.appliedConsequences ?? [],
       });
       await refresh();
     } catch (err) {
@@ -96,7 +166,7 @@ export default function EventsPage(): JSX.Element {
     );
   }
 
-  // 1. RESULT & CONSEQUENCES SCREEN (Matches 'Choice Result  Consequences.png')
+  // 1. RESULT & CONSEQUENCES SCREEN (Matches 'Choice Result Consequences.png')
   if (resolved) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -167,77 +237,85 @@ export default function EventsPage(): JSX.Element {
           <p style={{ lineHeight: 1.6, fontSize: '0.92rem', color: 'var(--text)' }}>
             {resolved.success
               ? 'Your decision took hold successfully. People in your community noticed, and the immediate challenges turned into a foothold for your growth.'
-              : 'The outcome met unexpected resistance. Circumstances in town tested your resolve, but you weathered the hardship and carry forward.'}
+              : 'The outcome met unexpected resistance. Circumstances tested your resolve and resources, leaving an indelible mark on your journey.'}
           </p>
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <span className={resolved.success ? 'll-pill positive' : 'll-pill negative'}>
-              {resolved.success ? 'Outcome: Favorable Outcome' : 'Outcome: Complicated Outcome'}
+              {resolved.success ? 'Outcome: Favorable Success' : 'Outcome: Complicated Failure'}
             </span>
+            {resolved.roll !== undefined && resolved.finalProbability !== undefined && (
+              <span className="ll-pill neutral" style={{ fontSize: '0.75rem' }}>
+                Roll: {resolved.roll} (Chance: {resolved.finalProbability}%)
+              </span>
+            )}
           </div>
         </section>
 
-        {/* Changes in Your Life Breakdown */}
+        {/* Actual Authoritative Consequences Breakdown */}
         <section className="ll-card">
           <h3 className="ll-section-title" style={{ marginBottom: 12 }}>
             <span className="ll-section-icon">📊</span> Changes in Your Life
           </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>🪙</span>
-                <span style={{ fontWeight: 600 }}>Wealth / Income</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: resolved.success ? 'var(--green)' : 'var(--text-dim)', fontWeight: 700 }}>
-                  {resolved.success ? '+10' : '+0'}
-                </span>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Adjusted with your standing</span>
-              </div>
+          {resolved.appliedConsequences.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '4px 0' }}>
+              No permanent stat alterations resulted directly from this choice.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {resolved.appliedConsequences.map((c, idx) => {
+                const item = formatConsequence(c);
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderBottom:
+                        idx === resolved.appliedConsequences.length - 1
+                          ? 'none'
+                          : '1px solid var(--border)',
+                      paddingBottom: idx === resolved.appliedConsequences.length - 1 ? 0 : 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>{item.icon}</span>
+                      <span style={{ fontWeight: 600 }}>{item.label}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span
+                        style={{
+                          color: item.isPositive
+                            ? 'var(--green)'
+                            : item.isNegative
+                            ? 'var(--red)'
+                            : 'var(--cream)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.changeText}
+                      </span>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                        {item.note}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>🧠</span>
-                <span style={{ fontWeight: 600 }}>Knowledge</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>+5</span>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Learned from practical experience</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>👥</span>
-                <span style={{ fontWeight: 600 }}>Relationships</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: 'var(--green)', fontWeight: 700 }}>+5</span>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Formed bonds with those around you</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>⏱️</span>
-                <span style={{ fontWeight: 600 }}>Free Time</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ color: 'var(--red)', fontWeight: 700 }}>-10</span>
-                <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Dedicated time to this endeavor</span>
-              </div>
-            </div>
-          </div>
+          )}
         </section>
 
-        {/* New Opportunities Card */}
+        {/* Historical Footprint & Continuity */}
         <section className="ll-card">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span style={{ color: 'var(--gold-400)', fontSize: '1.2rem' }}>⭐</span>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--cream)' }}>New Opportunities</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--cream)' }}>
+              Historical Footprint
+            </span>
           </div>
           <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            You may now gain more experience in this field, unlock higher social connections, and influence subsequent historical branches in this region.
+            This event has been recorded in your permanent life chronicle. Subsequent years and historical encounters will reflect these consequences.
           </p>
         </section>
 

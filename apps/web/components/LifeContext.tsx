@@ -18,11 +18,16 @@ interface LifeContextValue {
   loading: boolean;
   error: string | undefined;
   createNewLife: (params: CreateLifeParams | string) => Promise<void>;
+  loadLife: (id: string) => Promise<void>;
+  deleteLife: (id: string) => Promise<void>;
   advanceLife: (years?: number) => Promise<LifeView | undefined>;
   buyProperty: (property: { id: string; name: string; type: 'residence' | 'commercial' | 'farmland'; cost: number; annualYield: number }) => Promise<LifeView | undefined>;
   marryPartner: (partnerName: string) => Promise<LifeView | undefined>;
   haveChild: (childName: string) => Promise<LifeView | undefined>;
   playAsHeir: () => Promise<LifeView | undefined>;
+  applyCareer: (occupationId: string, yearlyIncome?: number) => Promise<LifeView | undefined>;
+  performHealthActivity: (activityType: 'exercise' | 'rest' | 'consultation' | 'medicine') => Promise<LifeView | undefined>;
+  interactRelationship: (relId: string, action: 'spend_time' | 'gift' | 'confide' | 'apologize') => Promise<LifeView | undefined>;
   refresh: () => Promise<void>;
   forgetLife: () => void;
 }
@@ -32,11 +37,16 @@ const LifeContext = createContext<LifeContextValue>({
   loading: true,
   error: undefined,
   createNewLife: async () => {},
+  loadLife: async () => {},
+  deleteLife: async () => {},
   advanceLife: async () => undefined,
   buyProperty: async () => undefined,
   marryPartner: async () => undefined,
   haveChild: async () => undefined,
   playAsHeir: async () => undefined,
+  applyCareer: async () => undefined,
+  performHealthActivity: async () => undefined,
+  interactRelationship: async () => undefined,
   refresh: async () => {},
   forgetLife: () => {},
 });
@@ -190,6 +200,101 @@ export function LifeProvider({ children }: { children: ReactNode }): JSX.Element
     }
   }, [lifeId]);
 
+  const loadLife = useCallback(async (id: string) => {
+    setLoading(true);
+    setError(undefined);
+    try {
+      const loaded = await api.getLife(id);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, loaded.id);
+      } catch {
+        /* ignore */
+      }
+      setLifeId(loaded.id);
+      setView(loaded);
+    } catch (err) {
+      const msg = err instanceof ApiError ? `${err.code}: ${err.message}` : 'Failed to load save';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const deleteLife = useCallback(async (id: string) => {
+    setLoading(true);
+    setError(undefined);
+    try {
+      await api.deleteLife(id);
+      if (lifeId === id) {
+        try {
+          window.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* ignore */
+        }
+        setLifeId(undefined);
+        setView(undefined);
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? `${err.code}: ${err.message}` : 'Failed to delete save';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [lifeId]);
+
+  const applyCareer = useCallback(async (occupationId: string, yearlyIncome?: number) => {
+    if (!lifeId) return undefined;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const updated = await api.applyJob(lifeId, occupationId, yearlyIncome);
+      setView(updated);
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? `${err.code}: ${err.message}` : 'Failed to apply for career';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [lifeId]);
+
+  const performHealthActivity = useCallback(async (activityType: 'exercise' | 'rest' | 'consultation' | 'medicine') => {
+    if (!lifeId) return undefined;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const updated = await api.performHealthActivity(lifeId, activityType);
+      setView(updated);
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? `${err.code}: ${err.message}` : 'Failed to perform health activity';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [lifeId]);
+
+  const interactRelationship = useCallback(async (relId: string, action: 'spend_time' | 'gift' | 'confide' | 'apologize') => {
+    if (!lifeId) return undefined;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const updated = await api.interactRelationship(lifeId, relId, action);
+      setView(updated);
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? `${err.code}: ${err.message}` : 'Failed to interact with relationship';
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [lifeId]);
+
   const forgetLife = useCallback(() => {
     try {
       window.localStorage.removeItem(STORAGE_KEY);
@@ -206,15 +311,37 @@ export function LifeProvider({ children }: { children: ReactNode }): JSX.Element
       loading,
       error,
       createNewLife,
+      loadLife,
+      deleteLife,
       advanceLife,
       buyProperty,
       marryPartner,
       haveChild,
       playAsHeir,
+      applyCareer,
+      performHealthActivity,
+      interactRelationship,
       refresh,
       forgetLife,
     }),
-    [view, loading, error, createNewLife, advanceLife, buyProperty, marryPartner, haveChild, playAsHeir, refresh, forgetLife],
+    [
+      view,
+      loading,
+      error,
+      createNewLife,
+      loadLife,
+      deleteLife,
+      advanceLife,
+      buyProperty,
+      marryPartner,
+      haveChild,
+      playAsHeir,
+      applyCareer,
+      performHealthActivity,
+      interactRelationship,
+      refresh,
+      forgetLife,
+    ],
   );
   return <LifeContext.Provider value={value}>{children}</LifeContext.Provider>;
 }

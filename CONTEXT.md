@@ -411,6 +411,95 @@
 - `npm test`: 79/79 unit tests passing across all 7 test suites.
 - Zero writes to C: drive maintained.
 
+---
+
+### Iteration 008 — 2026-10-09 — Full Implementation, Bug Fixing, Integration & E2E Verification ✅
+
+**User Trigger:**
+- "LEGACYLIFE — FULL IMPLEMENTATION, BUG FIXING, SYSTEM INTEGRATION & END-TO-END VERIFICATION"
+- Mandate: Bring LegacyLife from audited state to a fully implemented, coherent, connected, playable historical life simulator. Resolve all P0/P1 issues, replace UI facades with real engine operations, integrate persistence, career, health, event failure branches, historical divergence, and save/load management.
+
+**Work Executed & Issues Resolved:**
+1. **Generational Lineage Preservation (P0):**
+   - Corrected `playAsHeir` so it never overwrites the ancestor save file. Allocates unique heir ID, links `ancestorId` and `descendantId`, increments generation, and saves both ancestor archive and heir independently.
+2. **Safe Atomic File Persistence (P0):**
+   - Replaced direct writes in `FileSaveStore` with two-stage `.tmp` file write, payload syntax and version validation, `fsyncSync`, and atomic `renameSync`. Detects corrupted saves and cleans up stale `.tmp` files.
+3. **Idempotency & Mutation Protection (P1):**
+   - Added in-memory idempotency cache in API server (`packages/api/src/server.ts`) keyed by route and `idempotency-key` / `operationId` to prevent duplicate operations from retries or double-taps.
+4. **Real Save/Load Game Management (P1):**
+   - Removed fake records ("Charlotte Sterling", "Zubair Khan") from `/saves`. Wired to `api.listLives()` returning real `SaveSummary[]`, active life tracking, load-on-click, and confirmed deletion modal.
+5. **Real Career Operations (P1):**
+   - Replaced cosmetic toasts with `applyJobSession` in `session.ts` and `POST /api/v1/lives/:id/career/apply`. Mapped historical occupation IDs (`occupation.commercial_clerk`, `occupation.government_clerk`, `occupation.mill_operative`) in `career/page.tsx`, updating wages, occupation, and life timeline.
+6. **Real Health Metrics & Activities (P1):**
+   - Replaced static numbers with dynamic vitals and `performHealthActivitySession` (`POST /api/v1/lives/:id/health/activity`), supporting paid consultations, restorative medicine, exercise, and rest.
+7. **Event Applied Consequences & Failure Branches (P1):**
+   - Extended `Choice` schema with `failureConsequences?: Consequence[]`. Returns `appliedConsequences: Consequence[]` in `ChoiceResult`. Replaced hardcoded `+10 Wealth` cards in `events/page.tsx` with dynamic consequence rendering and dice rolls vs thresholds.
+8. **Dynamic Historical Context & Divergences (P1):**
+   - Connected `world/page.tsx` to `api.historicalContext`, rendering dynamic political entity, active historical events, and provincial laws. Added active historical divergences card.
+9. **Persistent Relationship Interactions (P1):**
+   - Implemented `interactRelationshipSession` (`POST /api/v1/lives/:id/relationships/:relId/interact`), supporting `spend_time`, paid gifts, `confide`, and `apologize`. Persists bond scores and timeline entries.
+10. **Full Chronological Timeline & Multidimensional Legacy (P2):**
+    - Removed 25-event truncation in `LifeService.toView()` and `life/page.tsx`, preserving complete history from birth. Rendered multidimensional 5-pillar legacy (`family`, `economic`, `social`, `institutional`, `historical`) and alternate divergence branches in `legacy/page.tsx`.
+11. **Routing Cleanup (P2):**
+    - Updated `apps/web/app/[...slug]/page.tsx` to invoke Next.js `notFound()`, ensuring unhandled paths properly trigger `not-found.tsx`.
+12. **Automated Frontend & E2E Test Suite Added:**
+    - Created `apps/web/__tests__/frontend_e2e.test.ts` verifying multi-save management, career operations, health operations, choice consequences, context resolution, persistent relationships, full lifetime journey with natural mortality, and lineage heir succession.
+    - Added `packages/api/src/__tests__/store.test.ts` verifying atomic file persistence.
+
+**Verification:**
+- `npm test`: 98/98 unit and integration tests passing across all 9 test suites (2.45s).
+- `npm run typecheck`: Clean across all 6 workspace packages (`shared`, `historical`, `content`, `simulation`, `api`, `web`) with 0 errors.
+- `npm run slice`: Vertical slice simulation 1946 completed and verified (`docs/proofs/vertical-slice-1946.md`).
+- `npm run web:build`: Next.js 14 production build compiled all 13 routes successfully.
+- Hard rules verified: All caches and files maintained on Drive D (`D:\Another life\legacylife`). Zero writes to C:.
+- Documentation produced:
+  - `audit/15_IMPLEMENTATION_CHANGELOG.md`
+  - `audit/16_FINAL_VERIFICATION_REPORT.md`
+  - `audit/17_REMAINING_GAPS.md`
+
+---
+
+### Iteration 009 — 2026-10-09 — 100% Offline Standalone & APK Engine Implementation ✅
+
+**User Trigger:**
+- "yes do it so that it runs on its own and works completely 100%"
+- Requirement: Make LegacyLife run 100% standalone and offline without requiring any backend server or network connectivity, so that building an APK and closing the backend works completely.
+
+**Work Executed & Issues Resolved:**
+1. **Decoupled Store Interface (`packages/api/src/store-types.ts`):**
+   - Extracted `SaveStore` interface and `StoreError` class away from `node:fs` dependencies.
+   - Decoupled `LifeService` (`packages/api/src/service.ts`) from filesystem-specific `FileSaveStore`, allowing it to consume any generic `SaveStore` implementation without native Node.js imports.
+2. **Browser LocalStorage Store (`apps/web/lib/browser-store.ts`):**
+   - Created `BrowserLocalStorageSaveStore implements SaveStore`.
+   - Persists save records directly in mobile/browser `localStorage` (`legacylife:save:<id>`), safely surviving app kills, restarts, and device reboots in the Android WebView sandbox.
+   - Included in-memory fallback during SSR / static page builds.
+3. **Dual-Mode Offline Engine Bridge (`apps/web/lib/api.ts`):**
+   - Integrated in-process `LifeService` running directly inside the client application thread.
+   - Implemented automatic seamless fallback: if remote backend is closed, unreachable, or app is in standalone/offline mode, all API calls transparently execute directly against `localService` with 0 network latency and 0 connection requirements.
+   - Persisted offline mode preference in `localStorage`.
+   - Implemented `exportSave` and `importSave` endpoints in `LifeService`, `server.ts`, and `api.ts`.
+4. **Static Mobile APK Export (`apps/web/next.config.mjs`, `apps/web/out/`):**
+   - Enabled `output: 'export'` and `images: { unoptimized: true }` in `next.config.mjs`.
+   - Configured catch-all route static parameter generation in `apps/web/app/[...slug]/page.tsx`.
+   - Generates pure static HTML/CSS/JS client bundles ready for Android WebView or Capacitor packaging.
+5. **Save Management UI Tools (`apps/web/app/saves/page.tsx`):**
+   - Added native client-side JSON snapshot export (triggers offline file download via Blob URL).
+   - Added native client-side JSON snapshot import (restores chronicle JSON directly into storage).
+   - Added interactive Execution Engine switcher in Settings tab displaying "100% On-Device Standalone (Zero Network Calls)" vs "Backend Server".
+6. **Automated Offline Standalone Test Suite (`apps/web/__tests__/offline_standalone.test.ts`):**
+   - Verified 100% offline standalone operation: life creation, saves listing, historical context resolution, event choice resolution, consequences, career appointment, health activities, relationships, property acquisition, marriage, childbirth, natural mortality, heir succession, offline save export, offline save import, and automatic connection fallback.
+
+**Verification:**
+- `npm test`: 100/100 unit, integration, and offline standalone tests passing across all 10 test suites (1.98s).
+- `npm run typecheck`: 0 errors across all 6 packages (`shared`, `historical`, `content`, `simulation`, `api`, `web`).
+- `npm run slice`: Vertical slice simulation 1946 completed and verified (`docs/proofs/vertical-slice-1946.md`).
+- `npm run web:build`: Next.js 14 production static export compiled all 13 routes successfully to `apps/web/out/`.
+- Native Android project generated: `apps/web/android/` with complete Gradle files, manifests, and pre-packaged static assets (`apps/web/android/app/src/main/assets/public/`).
+- CI/CD workflow created: `.github/workflows/build-apk.yml` for automated GitHub Actions APK builds.
+- Hard rules verified: All caches and files maintained on Drive D (`D:\Another life\legacylife`). Zero writes to C:.
+
+
+
 
 
 

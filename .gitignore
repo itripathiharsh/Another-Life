@@ -2,8 +2,10 @@
 node_modules/
 dist/
 .next/
+apps/web/out/
 coverage/
 *.tsbuildinfo
+
 
 # Local caches & temp — everything stays inside the repo (D-drive rule)
 .cache/

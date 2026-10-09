@@ -1,8 +1,9 @@
 'use client';
 
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLife } from '../../components/LifeContext';
+import { api, type HistoricalContextView } from '../../lib/api';
 import {
   ALL_CITY_METADATA,
   formatLocationFull,
@@ -27,6 +28,28 @@ export default function WorldPage(): JSX.Element {
   const locationRaw = player?.locationId ?? 'location.lucknow';
   const isVictorian = isVictorianLocation(locationRaw);
   const [selectedRegion, setSelectedRegion] = useState<string>(isVictorian ? 'Europe' : 'Asia');
+  const [context, setContext] = useState<HistoricalContextView | null>(null);
+  const [contextLoading, setContextLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!view?.date || !player?.locationId) return;
+    let cancelled = false;
+    setContextLoading(true);
+    api
+      .historicalContext(view.date, player.locationId)
+      .then((ctx) => {
+        if (!cancelled) setContext(ctx);
+      })
+      .catch(() => {
+        // Graceful fallback for offline / disconnected modes
+      })
+      .finally(() => {
+        if (!cancelled) setContextLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view?.date, player?.locationId]);
 
   const yearStr = view?.date.slice(0, 4) ?? (isVictorian ? '1850' : '1946');
   const yearNum = parseInt(yearStr, 10);
@@ -53,7 +76,7 @@ export default function WorldPage(): JSX.Element {
         { region: 'Americas', wealth: 'var(--green)', education: 'var(--green)', healthcare: 'var(--green)', safety: 'var(--green)', quality: 'var(--green)' },
       ];
 
-  const globalEvents = isVictorian
+  const fallbackGlobalEvents = isVictorian
     ? [
         {
           icon: '🏛️',
@@ -99,6 +122,16 @@ export default function WorldPage(): JSX.Element {
         },
       ];
 
+  const displayEvents =
+    context?.activeEvents && context.activeEvents.length > 0
+      ? context.activeEvents.map((e) => ({
+          icon: '📜',
+          title: e.name,
+          date: view?.date ?? yearStr,
+          desc: `Historical dynamic event (Status: ${e.status}) registered in provincial annals.`,
+        }))
+      : fallbackGlobalEvents;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* City Profile & Cartography Column Stack */}
@@ -130,8 +163,10 @@ export default function WorldPage(): JSX.Element {
               <div style={{ fontWeight: 600 }}>{city.pop}</div>
             </div>
             <div style={{ background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>GOVERNMENT</div>
-              <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{eraInfo.governmentTitle}</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>POLITICAL ENTITY / GOV</div>
+              <div style={{ fontWeight: 600, fontSize: '0.8rem', color: context?.political ? 'var(--gold-300)' : 'inherit' }}>
+                {context?.political?.name ?? eraInfo.governmentTitle}
+              </div>
             </div>
             <div style={{ background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>LANGUAGE</div>
@@ -151,6 +186,58 @@ export default function WorldPage(): JSX.Element {
             </div>
           </div>
         </div>
+
+        {/* Historical Divergences Banner */}
+        {view?.divergences && view.divergences.length > 0 && (
+          <div className="ll-card ll-card-gold" style={{ padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: '1.2rem' }}>⚡</span>
+              <h3 style={{ fontSize: '1rem', color: 'var(--gold-300)', margin: 0, fontWeight: 700 }}>
+                Historical Divergences Active ({view.divergences.length})
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>
+              Your actions have diverged this timeline from canon history:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {view.divergences.map((div, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: 'rgba(0,0,0,0.25)',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    fontSize: '0.8rem',
+                    borderLeft: '3px solid var(--gold-400)',
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: 'var(--cream)' }}>
+                    {div.date} (Scope {div.scope}):
+                  </span>{' '}
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {div.cause || div.newState || div.description || 'Historical divergence recorded'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active Provincial Laws & Ordinances */}
+        {context?.activeLaws && context.activeLaws.length > 0 && (
+          <div className="ll-card">
+            <h3 className="ll-section-title" style={{ marginBottom: 8 }}>
+              <span className="ll-section-icon">⚖️</span> Enacted Laws & Statutes
+            </h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {context.activeLaws.map((law, idx) => (
+                <span key={idx} className="ll-pill gold" style={{ fontSize: '0.78rem' }}>
+                  § {law.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Historical Map Card */}
         <div
@@ -221,7 +308,7 @@ export default function WorldPage(): JSX.Element {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {globalEvents.map((evt, idx) => (
+            {displayEvents.map((evt, idx) => (
               <div
                 key={idx}
                 style={{

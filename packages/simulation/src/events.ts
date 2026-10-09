@@ -44,7 +44,9 @@ export interface Choice {
   /** Base success probability 0-100. Modifiers added at resolution. */
   baseProbability: number;
   consequences: Consequence[];
+  failureConsequences?: Consequence[];
 }
+
 
 export interface SimEventTemplate {
   id: string;

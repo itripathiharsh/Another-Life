@@ -19,10 +19,12 @@ interface Job {
   skillsGained: string;
   requirements: string;
   icon: string;
+  occupationId: string;
+  numericIncome: number;
 }
 
 export default function CareerPage(): JSX.Element {
-  const { view } = useLife();
+  const { view, applyCareer } = useLife();
   const [activeTab, setActiveTab] = useState<string>('Job Opportunities');
   const [toastMsg, setToastMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
@@ -155,198 +157,230 @@ export default function CareerPage(): JSX.Element {
           title: 'Apprentice Joiner & Carpenter',
           type: 'Apprenticeship',
           desc: 'Work under a master carpenter in the docks or builder yards. Learn timber joinery, carving, and framing.',
-          income: `+${currency.symbol}12 / year`,
+          income: `+${currency.symbol}20 / year`,
+          numericIncome: 20,
           minAge: 14,
           experienceLevel: 'Entry',
           skillsGained: 'Craftsmanship, Focus',
           requirements: 'Minimum Age 14+',
           icon: '🔨',
+          occupationId: 'occupation.skilled_tradesperson',
         },
         {
           id: 'j2',
           title: 'Draper’s & Shop Assistant',
           type: 'Apprenticeship',
           desc: 'Assist in a bustling high-street draper or dry goods shop. Measure cloth yards and record customer accounts.',
-          income: `+${currency.symbol}15 / year`,
+          income: `+${currency.symbol}25 / year`,
+          numericIncome: 25,
           minAge: 14,
           experienceLevel: 'Entry',
           skillsGained: 'Commerce, Ledger Accounts',
           requirements: 'Minimum Age 14+',
           icon: '🏪',
+          occupationId: 'occupation.shopkeeper',
         },
         {
           id: 'j3',
           title: 'Cotton Mill Operative',
           type: 'Industrial Labor',
           desc: 'Operate mechanised steam weaving looms and carding machines in northern manufacturing mills.',
-          income: `+${currency.symbol}18 / year`,
+          income: `+${currency.symbol}30 / year`,
+          numericIncome: 30,
           minAge: 14,
           experienceLevel: 'Entry',
           skillsGained: 'Machinery Operation, Endurance',
           requirements: 'Minimum Age 14+',
           icon: '🏭',
+          occupationId: 'occupation.mill_operative',
         },
         {
           id: 'j4',
-          title: 'Grammar School & Classical Scholar',
+          title: 'Schoolmaster & Scholar',
           type: 'Scholastic',
-          desc: 'Pursue classical Greek, Latin, mathematics, and jurisprudence for high civil or legal offices.',
-          income: '0 / year (Fellowship)',
-          minAge: 14,
+          desc: 'Instruct pupils in grammar, arithmetic, classical literature, and moral discipline.',
+          income: `+${currency.symbol}80 / year`,
+          numericIncome: 80,
+          minAge: 18,
           experienceLevel: 'Scholastic',
-          skillsGained: 'Philosophy, Classical Languages, Law',
-          requirements: 'Minimum Age 14+, Literacy',
+          skillsGained: 'Philosophy, Classical Languages, Teaching',
+          requirements: 'Minimum Age 18+, Education 8+ yrs',
           icon: '📖',
+          occupationId: 'occupation.schoolmaster',
         },
         {
           id: 'j5',
-          title: 'GPO Telegraph Clerk',
+          title: 'City Commercial Clerk',
           type: 'Full-time Professional',
-          desc: 'Operate electric Morse telegraph keys transmitting domestic commerce and Admiralty wires across Great Britain.',
+          desc: 'Manage ledgers, billings, and maritime commerce records in a London counting-house.',
           income: `+${currency.symbol}180 / year`,
+          numericIncome: 180,
           minAge: 18,
           experienceLevel: 'Professional',
-          skillsGained: 'Telegraphy, Administration, Ciphers',
+          skillsGained: 'Administration, Ledger Accounts',
           requirements: 'Minimum Age 18+, Education 8+ yrs',
-          icon: '⚡',
+          icon: '📜',
+          occupationId: 'occupation.commercial_clerk',
         },
         {
           id: 'j6',
           title: 'Locomotive Stoker & Driver',
           type: 'Railway Transport',
-          desc: 'Regulate high-pressure steam boilers and fireboxes on the Great Western and Northern Express trunk lines.',
-          income: `+${currency.symbol}210 / year`,
+          desc: 'Regulate high-pressure steam boilers and fireboxes on northern railway trunk lines.',
+          income: `+${currency.symbol}140 / year`,
+          numericIncome: 140,
           minAge: 18,
-          experienceLevel: 'Advanced Technical',
-          skillsGained: 'Boiler Engineering, Railway Regulations',
+          experienceLevel: 'Technical',
+          skillsGained: 'Steam Engineering, Transit',
           requirements: 'Minimum Age 18+, Physical Stamina',
           icon: '🚂',
+          occupationId: 'occupation.locomotive_stoker',
         },
         {
           id: 'j7',
-          title: 'Steam Engine Builder & Fitter',
-          type: 'Heavy Engineering',
-          desc: 'Assemble marine propulsion engines, beam pumps, and industrial machine tools in iron foundry works.',
-          income: `+${currency.symbol}240 / year`,
-          minAge: 18,
-          experienceLevel: 'Master Artisan',
-          skillsGained: 'Mechanical Precision, Metallurgy',
-          requirements: `Minimum Age 18+, Capital 100+ ${currency.unit}`,
-          icon: '⚙️',
+          title: 'Inns of Court Solicitor',
+          type: 'Legal Profession',
+          desc: 'Draft wills, property contracts, petitions, and legal briefs in Westminster courts.',
+          income: `+${currency.symbol}260 / year`,
+          numericIncome: 260,
+          minAge: 20,
+          experienceLevel: 'Advanced Scholastic',
+          skillsGained: 'Jurisprudence, Public Standing',
+          requirements: 'Minimum Age 20+, Education 10+ yrs',
+          icon: '⚖️',
+          occupationId: 'occupation.solicitor',
         },
         {
           id: 'j8',
-          title: 'Surgeon & Apothecary Physician',
-          type: 'Medical Profession',
-          desc: 'Practice medicine, clinical diagnoses, and public sanitation under the Royal College of Surgeons.',
-          income: `+${currency.symbol}260 / year`,
-          minAge: 20,
-          experienceLevel: 'Advanced Scholastic',
-          skillsGained: 'Surgery, Pharmacology, Anatomy',
-          requirements: 'Minimum Age 20+, Education 10+ yrs',
-          icon: '🩺',
+          title: 'Mill Owner & Manufacturer',
+          type: 'Industrial Enterprise',
+          desc: 'Own and supervise textile or engineering works, contracting laborers and managing exports.',
+          income: `+${currency.symbol}320 / year`,
+          numericIncome: 320,
+          minAge: 21,
+          experienceLevel: 'Capital & Management',
+          skillsGained: 'Enterprise, Wealth Management',
+          requirements: `Minimum Age 21+, Capital 200+ ${currency.unit}`,
+          icon: '🏭',
+          occupationId: 'occupation.mill_owner',
         },
       ]
     : [
         {
           id: 'j1',
-          title: 'Apprentice Carpenter',
+          title: 'Apprentice Skilled Tradesperson',
           type: 'Apprenticeship',
-          desc: 'Work under a master carpenter. Learn wood joinery, carving, and furniture construction.',
-          income: `+${currency.symbol}12 / year`,
+          desc: 'Work under a master mason, carpenter, or tailor in the historic bazaars of Awadh.',
+          income: `+${currency.symbol}25 / year`,
+          numericIncome: 25,
           minAge: 14,
           experienceLevel: 'Entry',
           skillsGained: 'Craftsmanship, Focus',
           requirements: 'Minimum Age 14+',
           icon: '🔨',
+          occupationId: 'occupation.skilled_tradesperson',
         },
         {
           id: 'j2',
-          title: 'Shop Assistant / Helper',
+          title: 'Bazaar Shopkeeper Assistant',
           type: 'Apprenticeship',
-          desc: 'Assist at a bustling market stall. Learn commercial bookkeeping, weights, and trade.',
-          income: `+${currency.symbol}15 / year`,
+          desc: 'Assist at an Aminabad market stall. Learn commercial credit, weights, and spice/cloth trade.',
+          income: `+${currency.symbol}35 / year`,
+          numericIncome: 35,
           minAge: 14,
           experienceLevel: 'Entry',
-          skillsGained: 'Trade, Communication',
+          skillsGained: 'Trade, Bookkeeping',
           requirements: 'Minimum Age 14+',
           icon: '🏪',
+          occupationId: 'occupation.shopkeeper',
         },
         {
           id: 'j3',
-          title: 'Agricultural Assistant',
+          title: 'Agricultural Field Worker',
           type: 'Seasonal Labor',
-          desc: 'Assist on regional farms during sowing and harvest seasons.',
-          income: `+${currency.symbol}10 / year`,
+          desc: 'Work regional wheat, sugarcane, and paddy tracts across the fertile Awadh plains.',
+          income: `+${currency.symbol}20 / year`,
+          numericIncome: 20,
           minAge: 14,
           experienceLevel: 'Entry',
-          skillsGained: 'Physical Endurance, Agriculture',
+          skillsGained: 'Agriculture, Endurance',
           requirements: 'Minimum Age 14+',
           icon: '🌾',
+          occupationId: 'occupation.agricultural_worker',
         },
         {
           id: 'j4',
-          title: 'Academy / University Scholar',
+          title: 'Primary School Teacher',
           type: 'Scholastic',
-          desc: 'Pursue advanced scholarship, law, and economic planning for higher civil positions.',
-          income: '0 / year (Scholarship)',
-          minAge: 14,
+          desc: 'Teach literacy, arithmetic, civic history, and ethics to municipal school pupils.',
+          income: `+${currency.symbol}120 / year`,
+          numericIncome: 120,
+          minAge: 18,
           experienceLevel: 'Scholastic',
-          skillsGained: 'Philosophy, Logic, Law',
-          requirements: 'Minimum Age 14+, Literacy',
+          skillsGained: 'Education, Civic Standing',
+          requirements: 'Minimum Age 18+, Education 8+ yrs',
           icon: '📖',
+          occupationId: 'occupation.teacher',
         },
         {
           id: 'j5',
           title: 'Government Secretariat Clerk',
-          type: 'Full-time Professional',
-          desc: 'Serve in the civil administration drafting records, petitions, and tax accounts.',
+          type: 'Full-time Civil Service',
+          desc: 'Serve in the district secretariat, civil courts, or railways maintaining ledgers and petitions.',
           income: `+${currency.symbol}180 / year`,
+          numericIncome: 180,
           minAge: 18,
           experienceLevel: 'Professional',
           skillsGained: 'Administration, Law, Penmanship',
           requirements: 'Minimum Age 18+, Education 8+ yrs',
           icon: '📜',
+          occupationId: 'occupation.government_clerk',
         },
         {
           id: 'j6',
-          title: 'Independent Merchant',
-          type: 'Full-time Commerce',
-          desc: 'Operate an independent trade venture importing goods across regional trade hubs.',
+          title: 'Small Business & Workshop Owner',
+          type: 'Enterprise',
+          desc: 'Own and operate an independent trading firm, transport agency, or craftsman guild atelier.',
           income: `+${currency.symbol}220 / year`,
+          numericIncome: 220,
           minAge: 18,
-          experienceLevel: 'Advanced',
-          skillsGained: 'Negotiation, Trade Logistics',
+          experienceLevel: 'Enterprise',
+          skillsGained: 'Management, Capital',
           requirements: `Minimum Age 18+, Capital 100+ ${currency.unit}`,
-          icon: '🚢',
+          icon: '🏪',
+          occupationId: 'occupation.small_business_owner',
         },
         {
           id: 'j7',
-          title: 'Civil Defense & Armed Service',
-          type: 'Public Defense',
-          desc: 'Serve in national border defense and civil emergency volunteer brigades.',
+          title: 'Industrial Factory Worker',
+          type: 'Industrial Labor',
+          desc: 'Work in Kanpur textile mills, tanneries, or heavy ordnance manufacturing workshops.',
           income: `+${currency.symbol}140 / year`,
+          numericIncome: 140,
           minAge: 18,
-          experienceLevel: 'Public Service',
-          skillsGained: 'Combat, Discipline, Vigilance',
-          requirements: 'Minimum Age 18+, Health 75+',
-          icon: '⚔️',
+          experienceLevel: 'Manufacturing',
+          skillsGained: 'Industry, Precision',
+          requirements: 'Minimum Age 18+',
+          icon: '⚙️',
+          occupationId: 'occupation.factory_worker',
         },
         {
           id: 'j8',
-          title: 'Physician / Medical Vaid',
-          type: 'Medical Field',
-          desc: 'Study pathology, public health immunization, and pharmacology.',
-          income: `+${currency.symbol}200 / year`,
+          title: 'Medical Doctor / Professional',
+          type: 'Medical & Professional',
+          desc: 'Practice clinical medicine, pathology, and public health in district hospitals and clinics.',
+          income: `+${currency.symbol}250 / year`,
+          numericIncome: 250,
           minAge: 20,
-          experienceLevel: 'Advanced Scholastic',
-          skillsGained: 'Medicine, Biology, Care',
+          experienceLevel: 'Advanced Professional',
+          skillsGained: 'Medicine, Diagnosis, Care',
           requirements: 'Minimum Age 20+, Education 10+ yrs',
           icon: '🩺',
+          occupationId: 'occupation.professional',
         },
       ];
 
-  function handleApply(job: Job): void {
+  async function handleApply(job: Job): Promise<void> {
     if (age < job.minAge) {
       showToast(
         `⛔ Ineligible: You are only ${age} years old. Minimum required age for ${job.title} is ${job.minAge}.`,
@@ -354,9 +388,16 @@ export default function CareerPage(): JSX.Element {
       );
       return;
     }
-    showToast(
-      `✓ Position applied! Your petition for ${job.title} has been logged with the guild masters.`,
-    );
+    if (player?.occupationId === job.occupationId) {
+      showToast(`ℹ️ You already hold the position of ${job.title}.`);
+      return;
+    }
+    try {
+      await applyCareer(job.occupationId, job.numericIncome);
+      showToast(`✓ Position Secured! You are now employed as ${job.title} (+${currency.symbol}${job.numericIncome}/yr).`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Job application failed', true);
+    }
   }
 
   return (
@@ -693,16 +734,21 @@ export default function CareerPage(): JSX.Element {
 
                 <button
                   type="button"
-                  className={isEligible ? 'll-btn-gold' : 'll-btn-outline'}
+                  className={player?.occupationId === job.occupationId ? 'll-btn-outline' : isEligible ? 'll-btn-gold' : 'll-btn-outline'}
+                  disabled={!isEligible || player?.occupationId === job.occupationId}
                   style={{
                     width: '100%',
                     padding: '8px 14px',
                     fontSize: '0.85rem',
-                    cursor: isEligible ? 'pointer' : 'not-allowed',
+                    cursor: (isEligible && player?.occupationId !== job.occupationId) ? 'pointer' : 'default',
                   }}
-                  onClick={() => handleApply(job)}
+                  onClick={() => void handleApply(job)}
                 >
-                  {isEligible ? 'Apply for Position →' : `Locked (Minimum Age ${job.minAge})`}
+                  {player?.occupationId === job.occupationId
+                    ? '● Current Position'
+                    : isEligible
+                      ? 'Apply for Position →'
+                      : `Locked (Minimum Age ${job.minAge})`}
                 </button>
               </div>
             );

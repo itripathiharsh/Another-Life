@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LegacyLife</string>
+    <string name="title_activity_main">LegacyLife</string>
+    <string name="package_name">com.legacylife.app</string>
+    <string name="custom_url_scheme">com.legacylife.app</string>
+</resources>

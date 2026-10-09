@@ -14,7 +14,10 @@
     "slice": "tsx scripts/vertical-slice.ts",
     "api": "tsx packages/api/src/serve.ts",
     "web": "npm run dev --workspace=@legacylife/web",
-    "web:build": "npm run build --workspace=@legacylife/web"
+    "web:build": "npm run build --workspace=@legacylife/web",
+    "cap:sync": "npm run web:build && npx cap sync android --prefix apps/web",
+    "cap:open": "npx cap open android --prefix apps/web"
+
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

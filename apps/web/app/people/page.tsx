@@ -24,7 +24,7 @@ interface Person {
 }
 
 export default function PeoplePage(): JSX.Element {
-  const { view, marryPartner, haveChild } = useLife();
+  const { view, marryPartner, haveChild, interactRelationship } = useLife();
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [viewFamilyTree, setViewFamilyTree] = useState<boolean>(false);
@@ -195,12 +195,35 @@ export default function PeoplePage(): JSX.Element {
     });
   }
 
-  function handleAction(actionName: string): void {
+  async function handleAction(actionName: string): Promise<void> {
     if (!selectedPerson) return;
-    setInteractionToast(
-      `✓ Chose to ${actionName} with ${selectedPerson.name}. Relationship score increased!`,
-    );
-    selectedPerson.relationshipScore = Math.min(100, selectedPerson.relationshipScore + 3);
+    let engineAction: 'spend_time' | 'gift' | 'confide' | 'apologize' = 'spend_time';
+    if (actionName.includes('gift') || actionName.includes('sweets') || actionName.includes('allowance')) {
+      engineAction = 'gift';
+    } else if (
+      actionName.includes('comfort') ||
+      actionName.includes('secret') ||
+      actionName.includes('advice') ||
+      actionName.includes('story') ||
+      actionName.includes('confide')
+    ) {
+      engineAction = 'confide';
+    } else if (actionName.includes('distance') || actionName.includes('apolog')) {
+      engineAction = 'apologize';
+    }
+
+    try {
+      await interactRelationship(selectedPerson.id, engineAction);
+      selectedPerson.relationshipScore = Math.min(
+        100,
+        selectedPerson.relationshipScore + (engineAction === 'gift' ? 8 : 4),
+      );
+      setInteractionToast(
+        `✓ ${selectedPerson.name}: Relationship interaction recorded in permanent chronicle!`,
+      );
+    } catch (err) {
+      setInteractionToast(err instanceof Error ? err.message : 'Social interaction failed');
+    }
     setTimeout(() => setInteractionToast(null), 3500);
   }
 

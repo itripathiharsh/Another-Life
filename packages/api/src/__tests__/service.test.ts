@@ -162,5 +162,120 @@ describe('LifeService (Stage 4)', () => {
     expect(heir.player.name).toBe('Vikram');
     expect(heir.player.wealth).toBe(Math.round(400 * 0.8));
     expect(heir.player.properties).toHaveLength(1);
+
+    // REGRESSION TEST (A1): Heir MUST NOT overwrite ancestor!
+    expect(heir.id).not.toBe(created.id);
+    expect(heir.ancestorId).toBe(created.id);
+    expect(heir.generation).toBe(2);
+
+    // Ancestor save must remain fully preserved and intact on disk
+    const ancestor = service.getLife(created.id);
+    expect(ancestor.id).toBe(created.id);
+    expect(ancestor.status).toBe('dead');
+    expect(ancestor.descendantId).toBe(heir.id);
+    expect(ancestor.player.name).toBe('Dynasty Patriarch');
+    expect(ancestor.player.wealth).toBe(400); // Ancestor's historical wealth unmodified
+    expect(service.listLives()).toContain(created.id);
+    expect(service.listLives()).toContain(heir.id);
+
+    // Mutating heir life independently does not affect ancestor
+    const heirSession = (service as any).load(heir.id).session;
+    heirSession.player.age = 21;
+    (service as any).persist(heir.id, heirSession);
+
+    service.buyProperty(heir.id, {
+      id: 'prop.heir_land',
+      name: 'Heir Estate',
+      type: 'residence',
+      cost: 100,
+      annualYield: 15,
+    });
+    const ancestorAfter = service.getLife(created.id);
+    expect(ancestorAfter.player.wealth).toBe(400);
+    expect(ancestorAfter.player.properties).toHaveLength(1); // Still only original stall
+  });
+
+  it('supports career application and updates player occupation and salary', () => {
+    const created = service.createLife({ seed: 19460301, name: 'Career Candidate' });
+    const { session } = (service as any).load(created.id);
+    session.player.age = 19;
+    (service as any).persist(created.id, session);
+
+    const updated = service.applyJob(created.id, 'occupation.teacher', 150);
+    expect(updated.player.occupationId).toBe('occupation.teacher');
+    expect(updated.timeline.some((t) => t.includes('Appointed to position of teacher'))).toBe(true);
+
+    // Persisted properly
+    const reloaded = service.getLife(created.id);
+    expect(reloaded.player.occupationId).toBe('occupation.teacher');
+  });
+
+  it('supports real health activities with bounded stat and wealth effects', () => {
+    const created = service.createLife({ seed: 19460301, name: 'Health Candidate' });
+    const { session } = (service as any).load(created.id);
+    session.player.health = 70;
+    session.player.wealth = 100;
+    (service as any).persist(created.id, session);
+
+    // Exercise (+5 health)
+    const exResult = service.performHealthActivity(created.id, 'exercise');
+    expect(exResult.player.health).toBe(75);
+    expect(exResult.message).toContain('+5 Health');
+
+    // Doctor consultation (-15 wealth, +10 health)
+    const docResult = service.performHealthActivity(created.id, 'consultation');
+    expect(docResult.player.health).toBe(85);
+    expect(docResult.player.wealth).toBe(85);
+    expect(docResult.message).toContain('Consulted physician');
+
+    // Reject consultation if wealth insufficient
+    const poorSession = (service as any).load(created.id).session;
+    poorSession.player.wealth = 5;
+    (service as any).persist(created.id, poorSession);
+    expect(() => service.performHealthActivity(created.id, 'consultation')).toThrowError(SessionError);
+  });
+
+  it('supports persistent relationship interactions', () => {
+    const created = service.createLife({ seed: 19460301, name: 'Social Candidate' });
+    const { session } = (service as any).load(created.id);
+    session.player.wealth = 100;
+    (service as any).persist(created.id, session);
+
+    const rel = created.familyMembers[0] ?? { name: 'Mohan' };
+    const res = service.interactRelationship(created.id, 'rel.friend', 'spend_time');
+    expect(res.message).toContain('Spent quality time');
+    expect(res.timeline.some((t) => t.includes('[relationship]'))).toBe(true);
+  });
+
+  it('lists detailed save summaries for real save management', () => {
+    const lifeA = service.createLife({ seed: 101, name: 'Save Alpha' });
+    const lifeB = service.createLife({ seed: 102, name: 'Save Beta' });
+
+    const summaries = service.listLivesDetail();
+    expect(summaries.length).toBeGreaterThanOrEqual(2);
+    const alpha = summaries.find((s) => s.id === lifeA.id);
+    const beta = summaries.find((s) => s.id === lifeB.id);
+
+    expect(alpha?.name).toBe('Save Alpha');
+    expect(alpha?.status).toBe('active');
+    expect(beta?.name).toBe('Save Beta');
+    expect(beta?.status).toBe('active');
+  });
+
+  it('preserves complete life timeline across many years without truncation', () => {
+    const created = service.createLife({ seed: 19460301, name: 'Long Life Person' });
+    // Advance multiple times
+    for (let i = 0; i < 30 && service.getLife(created.id).status === 'active'; i++) {
+      const adv = service.advanceLife(created.id, 1);
+      if (adv.pending.length > 0) {
+        const first = adv.pending[0]!;
+        service.resolveChoice(created.id, first.eventId, first.choices[0]!.id);
+      }
+    }
+    const life = service.getLife(created.id);
+    expect(life.timeline.length).toBeGreaterThanOrEqual(25);
+    // Earliest milestone (birth) remains in timeline!
+    expect(life.timeline[0]).toContain('Born in');
   });
 });
+

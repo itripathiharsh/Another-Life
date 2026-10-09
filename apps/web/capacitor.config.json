@@ -1,0 +1,8 @@
+{
+  "appId": "com.legacylife.app",
+  "appName": "LegacyLife",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  }
+}

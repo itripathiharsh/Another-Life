@@ -512,9 +512,11 @@ export default function LegacyPage(): JSX.Element {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="ll-card ll-card-gold" style={{ textAlign: 'center', padding: '20px 14px' }}>
             <div style={{ fontSize: '2.4rem', color: 'var(--gold-400)' }}>👑</div>
-            <h2 style={{ fontSize: '1.8rem', color: 'var(--cream)', margin: '4px 0' }}>Your Legacy</h2>
+            <h2 style={{ fontSize: '1.8rem', color: 'var(--cream)', margin: '4px 0' }}>
+              Generation {view?.generation ?? 1} Legacy
+            </h2>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              How your name is inscribed across the chronicles of {locationName}.
+              How your name and lineage are inscribed across the chronicles of {locationName}.
             </div>
           </div>
 
@@ -522,29 +524,45 @@ export default function LegacyPage(): JSX.Element {
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
               <div style={{ fontSize: '2rem', color: 'var(--gold-400)' }}>🛡️</div>
               <div>
-                <h3 style={{ fontSize: '1.2rem', color: 'var(--gold-300)' }}>Well Remembered</h3>
+                <h3 style={{ fontSize: '1.2rem', color: 'var(--gold-300)' }}>
+                  {view?.legacy ? 'Authoritative Legacy Evaluation' : 'Well Remembered'}
+                </h3>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>
-                  You left a positive imprint on your household, peers, and city.
+                  Multidimensional historical assessment calculated across 5 dynastic pillars:
                 </div>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, fontSize: '0.85rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
-                <span>📖 Knowledge</span>
-                <span style={{ fontWeight: 600, color: 'var(--green)' }}>Respected</span>
+                <span>👥 Family Dynasty</span>
+                <span style={{ fontWeight: 700, color: 'var(--gold-300)' }}>
+                  {view?.legacy?.dimensions?.family ?? 45} / 100
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
-                <span>👥 Relationships</span>
-                <span style={{ fontWeight: 600, color: 'var(--green)' }}>Cherished</span>
+                <span>🪙 Economic Accumulation</span>
+                <span style={{ fontWeight: 700, color: 'var(--yellow)' }}>
+                  {view?.legacy?.dimensions?.economic ?? 30} / 100
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
-                <span>🏛️ Civic Standing</span>
-                <span style={{ fontWeight: 600, color: 'var(--yellow)' }}>Solid</span>
+                <span>⭐ Social Standing</span>
+                <span style={{ fontWeight: 700, color: 'var(--green)' }}>
+                  {view?.legacy?.dimensions?.social ?? 40} / 100
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: 8, borderRadius: 8 }}>
-                <span>🪙 Estate</span>
-                <span style={{ fontWeight: 600, color: 'var(--yellow)' }}>{wealth} Coins</span>
+                <span>🏛️ Institutional Influence</span>
+                <span style={{ fontWeight: 700, color: 'var(--blue)' }}>
+                  {view?.legacy?.dimensions?.institutional ?? 20} / 100
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', background: 'var(--bg-secondary)', padding: 8, borderRadius: 8, gridColumn: 'span 2' }}>
+                <span>⚡ Historical Divergence Impact</span>
+                <span style={{ fontWeight: 700, color: (view?.divergences?.length ?? 0) > 0 ? 'var(--gold-400)' : 'var(--text-muted)' }}>
+                  {view?.divergences?.length ?? 0} Alternate Branch{(view?.divergences?.length ?? 0) === 1 ? '' : 'es'}
+                </span>
               </div>
             </div>
           </div>
@@ -555,9 +573,24 @@ export default function LegacyPage(): JSX.Element {
               <span style={{ fontWeight: 600, color: 'var(--gold-400)' }}>Memorial Inscription</span>
             </div>
             <p style={{ fontStyle: 'italic', color: 'var(--cream-soft)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-              "{name} of {locationName}. Remembered for integrity, kinship loyalty, and steadfast devotion to home and duty during transformative times."
+              "{view?.legacy?.summary || `${name} of ${locationName}. Remembered for integrity, kinship loyalty, and steadfast devotion during transformative times.`}"
             </p>
           </div>
+
+          {view?.legacy?.timelineHighlights && view.legacy.timelineHighlights.length > 0 && (
+            <div className="ll-card">
+              <h3 className="ll-section-title" style={{ marginBottom: 8 }}>
+                <span className="ll-section-icon">⭐</span> Dynastic Highlights
+              </h3>
+              <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)', fontSize: '0.86rem' }}>
+                {view.legacy.timelineHighlights.map((hl, i) => (
+                  <li key={i} style={{ marginBottom: 4 }}>
+                    {hl}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <button

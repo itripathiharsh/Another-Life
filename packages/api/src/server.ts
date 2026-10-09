@@ -17,7 +17,28 @@ interface ApiErrorBody {
   request_id: string;
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+interface IdempotentRecord {
+  status: number;
+  body: unknown;
+  timestamp: number;
+}
+
+const idempotencyCache = new Map<string, IdempotentRecord>();
+
+function sendJson(res: ServerResponse, status: number, body: unknown, idempotencyKey?: string): void {
+  if (idempotencyKey) {
+    idempotencyCache.set(idempotencyKey, {
+      status,
+      body,
+      timestamp: Date.now(),
+    });
+    // Evict entries older than 10 minutes
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    for (const [k, v] of idempotencyCache.entries()) {
+      if (v.timestamp < cutoff) idempotencyCache.delete(k);
+    }
+  }
+
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -31,7 +52,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type,idempotency-key,x-idempotency-key',
   };
 }
 
@@ -117,6 +138,17 @@ async function handleRequest(
   const url = new URL(req.url ?? '/', 'http://localhost');
   const parts = url.pathname.split('/').filter((p) => p.length > 0);
 
+  // Check idempotency header for state-mutating requests
+  const idempHeader = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const rawIdempKey = typeof idempHeader === 'string' ? idempHeader.trim() : undefined;
+  const idempCacheKey = rawIdempKey ? `${method}:${url.pathname}:${rawIdempKey}` : undefined;
+
+  if (idempCacheKey && idempotencyCache.has(idempCacheKey)) {
+    const cached = idempotencyCache.get(idempCacheKey)!;
+    sendJson(res, cached.status, cached.body);
+    return;
+  }
+
   try {
     // GET /api/v1/historical-context?date=&locationId=
     if (method === 'GET' && parts.join('/') === 'api/v1/historical-context') {
@@ -129,6 +161,12 @@ async function handleRequest(
     // POST /api/v1/lives
     if (method === 'POST' && parts.join('/') === 'api/v1/lives') {
       const body = asRecord(await readBody(req));
+      const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+      if (opKey && idempotencyCache.has(opKey)) {
+        const cached = idempotencyCache.get(opKey)!;
+        sendJson(res, cached.status, cached.body);
+        return;
+      }
       const view = service.createLife({
         seed: typeof body['seed'] === 'number' ? body['seed'] : undefined,
         name: typeof body['name'] === 'string' ? body['name'] : '',
@@ -136,13 +174,28 @@ async function handleRequest(
         locationId: typeof body['locationId'] === 'string' ? body['locationId'] : undefined,
         classId: typeof body['classId'] === 'string' ? body['classId'] : undefined,
       });
-      sendJson(res, 201, view);
+      sendJson(res, 201, view, opKey);
       return;
     }
 
     // GET /api/v1/lives
     if (method === 'GET' && parts.join('/') === 'api/v1/lives') {
-      sendJson(res, 200, { lives: service.listLives() });
+      sendJson(res, 200, {
+        lives: service.listLives(),
+        saves: service.listLivesDetail(),
+      });
+      return;
+    }
+
+    // POST /api/v1/lives/import
+    if (method === 'POST' && parts.join('/') === 'api/v1/lives/import') {
+      const body = asRecord(await readBody(req));
+      const snapshot = body['snapshot'];
+      if (!snapshot) {
+        throw new SessionError('bad-body', 'snapshot is required');
+      }
+      const view = service.importSave(snapshot as string | Record<string, unknown>);
+      sendJson(res, 201, view);
       return;
     }
 
@@ -171,7 +224,13 @@ async function handleRequest(
       }
       if (method === 'POST' && rest.length === 1 && rest[0] === 'advance') {
         const body = asRecord(await readBody(req));
-        sendJson(res, 200, service.advanceLife(id, body['years']));
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.advanceLife(id, body['years']), opKey);
         return;
       }
       if (
@@ -182,7 +241,13 @@ async function handleRequest(
         if (typeof body['choiceId'] !== 'string') {
           throw new SessionError('bad-body', 'choiceId is required');
         }
-        sendJson(res, 200, service.resolveChoice(id, eventId, body['choiceId'] as string));
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.resolveChoice(id, eventId, body['choiceId'] as string), opKey);
         return;
       }
       if (method === 'POST' && rest.length === 2 && rest[0] === 'properties' && rest[1] === 'buy') {
@@ -194,23 +259,85 @@ async function handleRequest(
           cost: Number(body['cost'] ?? 100),
           annualYield: Number(body['annualYield'] ?? 10),
         };
-        sendJson(res, 200, service.buyProperty(id, prop));
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.buyProperty(id, prop), opKey);
         return;
       }
       if (method === 'POST' && rest.length === 1 && rest[0] === 'marry') {
         const body = asRecord(await readBody(req));
         const partnerName = String(body['partnerName'] ?? 'Spouse');
-        sendJson(res, 200, service.marryPartner(id, partnerName));
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.marryPartner(id, partnerName), opKey);
         return;
       }
       if (method === 'POST' && rest.length === 1 && rest[0] === 'children') {
         const body = asRecord(await readBody(req));
         const childName = String(body['childName'] ?? 'Child');
-        sendJson(res, 200, service.haveChild(id, childName));
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.haveChild(id, childName), opKey);
         return;
       }
       if (method === 'POST' && rest.length === 1 && rest[0] === 'heir') {
-        sendJson(res, 200, service.playAsHeir(id));
+        const opKey = idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.playAsHeir(id), opKey);
+        return;
+      }
+      if (method === 'POST' && rest.length === 2 && rest[0] === 'career' && rest[1] === 'apply') {
+        const body = asRecord(await readBody(req));
+        const occupationId = String(body['occupationId'] ?? '');
+        const yearlyIncome = typeof body['yearlyIncome'] === 'number' ? body['yearlyIncome'] : undefined;
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.applyJob(id, occupationId, yearlyIncome), opKey);
+        return;
+      }
+      if (method === 'POST' && rest.length === 2 && rest[0] === 'health' && rest[1] === 'activity') {
+        const body = asRecord(await readBody(req));
+        const activityType = String(body['activityType'] ?? 'exercise') as any;
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.performHealthActivity(id, activityType), opKey);
+        return;
+      }
+      if (method === 'POST' && rest.length === 3 && rest[0] === 'relationships' && rest[2] === 'interact') {
+        const relId = rest[1] ?? '';
+        const body = asRecord(await readBody(req));
+        const action = String(body['action'] ?? 'spend_time') as any;
+        const opKey = typeof body['operationId'] === 'string' ? `${method}:${url.pathname}:${body['operationId']}` : idempCacheKey;
+        if (opKey && idempotencyCache.has(opKey)) {
+          const cached = idempotencyCache.get(opKey)!;
+          sendJson(res, cached.status, cached.body);
+          return;
+        }
+        sendJson(res, 200, service.interactRelationship(id, relId, action), opKey);
         return;
       }
     }
